@@ -54,5 +54,6 @@
     "error": {
       "cannot_connect": "Verbindung zum Gateway fehlgeschlagen."
     }
-  }
+  },
+  "_integration_version": "1.10.0"
 }

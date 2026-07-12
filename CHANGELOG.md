@@ -5,6 +5,22 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 1.10.0
+
+Reiner Versionssprung auf 1.10.0 (von 1.0.7), keine Codeänderung.
+
+## 1.0.7
+
+**Veraltetes Versions-Beispiel in README korrigiert**
+
+- In der "Update veröffentlichen"-Anleitung stand noch ein altes
+  Beispiel (`v0.16.3`) statt eines zur aktuellen Version passenden
+  (`v1.0.6`/`v1.0.7`) - korrigiert.
+- Zur Klarstellung: Zwei Stellen im Code (`__init__.py`, `api.py`)
+  erwähnen bewusst "Version 0.13.0" - das sind KEINE veralteten
+  Versionsangaben, sondern historische Dokumentation, WANN der Wechsel
+  von aiohttp auf httpx eingeführt wurde. Diese bleiben unverändert.
+
 ## 1.0.6
 
 **`brand/`-Ordner (Integrations-Icon) jetzt fester Bestandteil des Projekts**

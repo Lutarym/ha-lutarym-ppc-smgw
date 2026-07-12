@@ -1,6 +1,6 @@
 # PPC Smart Meter Gateway (iMSys) – Home Assistant Integration (by Lutarym)
 
-**Aktuelle Version: 1.0.6** – siehe [CHANGELOG.md](CHANGELOG.md) für alle
+**Aktuelle Version: 1.10.0** – siehe [CHANGELOG.md](CHANGELOG.md) für alle
 Änderungen im Detail.
 
 Custom Component für Home Assistant zum Auslesen eines **PPC LTE Smart
@@ -219,7 +219,8 @@ nicht am neuesten Commit. Bei jeder neuen Version:
    `"name"`-Feld, unabhängig von `custom_components/lutarym_ppc_smgw/
    manifest.json` - bei Namensänderungen beide Dateien aktualisieren.
 3. Auf GitHub einen neuen **Release** anlegen (Releases → Create a new
-   release), Tag passend zur Version in `manifest.json`, z. B. `v0.16.3`.
+   release), Tag passend zur **aktuellen** Version in `manifest.json`
+   (z. B. bei `"version": "1.2.3"` den Tag `v1.2.3`).
 4. In HACS bei der Integration: ⋮ → **Redownload**, danach Home Assistant
    neu starten.
 

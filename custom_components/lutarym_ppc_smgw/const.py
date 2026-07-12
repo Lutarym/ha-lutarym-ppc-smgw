@@ -1,3 +1,4 @@
+# Integrationsversion: 1.10.0
 """Konstanten für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 # Interner, technischer Bezeichner der Integration. Wird u.a. für
@@ -31,4 +32,4 @@ HAN_PATH = "/cgi-bin/hanservice.cgi"
 # Wird im Config-Flow-Dialog und als Geräte-Softwareversion angezeigt, damit
 # man die installierte Version prüfen kann, auch bevor eine Verbindung
 # erfolgreich zustande kommt.
-VERSION = "1.0.6"
+VERSION = "1.10.0"
