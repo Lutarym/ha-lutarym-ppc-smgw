@@ -1,0 +1,11 @@
+{
+  "domain": "lutarym_ppc_smgw",
+  "name": "PPC Smart Meter Gateway (iMSys) by Lutarym",
+  "codeowners": ["@Lutarym"],
+  "config_flow": true,
+  "documentation": "https://github.com/Lutarym/ha-lutarym-ppc-smgw",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Lutarym/ha-lutarym-ppc-smgw/issues",
+  "requirements": [],
+  "version": "1.0.6"
+}

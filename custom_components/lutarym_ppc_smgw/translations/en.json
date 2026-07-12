@@ -1,0 +1,58 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect PPC Smart Meter Gateway (by Lutarym)",
+        "description": "Enter the IP address or hostname of your gateway. It will be checked for reachability on port 443 before you can enter login credentials.\n\nInstalled integration version: {version}",
+        "data": {
+          "host": "IP address / hostname"
+        }
+      },
+      "credentials": {
+        "title": "Gateway login",
+        "description": "The gateway at {host} is reachable. Enter the HAN login credentials you received from your metering point operator (Messstellenbetreiber).\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "meters": {
+        "title": "Select meters",
+        "description": "The following meters were found on the gateway. Choose which ones should be created as sensors.\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "data": {
+          "meter_ids": "Meters"
+        }
+      },
+      "tariffs": {
+        "title": "Select evaluation profiles",
+        "description": "The following evaluation profiles (Auswertungsprofile) are visible with these HAN credentials. This can include expired/historical profiles from previous energy supplier changes - choose which ones should be created as entities.\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "data": {
+          "tariff_ids": "Evaluation profiles"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Login rejected by the gateway (HTTP 401) - username or password is incorrect.",
+      "parsing_error": "Login was successful (credentials are correct!), but the gateway's response page could not be read. See details below.",
+      "cannot_connect": "Could not reach the gateway on port 443. Check the IP address and network route.",
+      "no_meters_found": "No meters were found on the gateway. See details below."
+    },
+    "abort": {
+      "already_configured": "This gateway is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Adjust meter/profile selection",
+        "data": {
+          "meter_ids": "Meters",
+          "tariff_ids": "Evaluation profiles"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the gateway."
+    }
+  }
+}
