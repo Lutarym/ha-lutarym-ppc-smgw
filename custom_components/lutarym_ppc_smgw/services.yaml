@@ -1,0 +1,38 @@
+import_history:
+  fields:
+    start_date:
+      required: true
+      example: "2026-01-01"
+      selector:
+        date: {}
+    start_value:
+      required: true
+      example: 851
+      selector:
+        number:
+          min: 0
+          step: 0.01
+          unit_of_measurement: kWh
+          mode: box
+    source_entity:
+      required: true
+      example: sensor.haus_strom_energie
+      selector:
+        entity:
+          domain: sensor
+    target_entity:
+      required: false
+      example: sensor.smartmeter_bezug
+      selector:
+        entity:
+          domain: sensor
+    monthly_kwh:
+      required: false
+      example: '{"2026-01": 130.5, "2026-03": 95}'
+      selector:
+        object: {}
+    dry_run:
+      required: false
+      default: false
+      selector:
+        boolean: {}

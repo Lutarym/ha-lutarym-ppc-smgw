@@ -55,5 +55,37 @@
       "cannot_connect": "Verbindung zum Gateway fehlgeschlagen."
     }
   },
-  "_integration_version": "1.10.0"
+  "services": {
+    "import_history": {
+      "name": "Historie importieren",
+      "description": "Einmaliger Import einer korrigierten historischen Statistik-Reihe für den 1-0:1.8.0-Sensor (Bezug) - kombiniert einen Startanker, den aktuellen Live-Wert als Endanker, die Tagesform einer Quell-Entity und optionale bekannte Monatswerte.",
+      "fields": {
+        "start_date": {
+          "name": "Startdatum",
+          "description": "Das Datum, ab dem die historische Reihe beginnen soll."
+        },
+        "start_value": {
+          "name": "Startwert (kWh)",
+          "description": "Der bekannte korrekte kumulierte Wert am Startdatum, in kWh."
+        },
+        "source_entity": {
+          "name": "Quell-Entity",
+          "description": "Entity, deren Statistik die Tag-zu-Tag-Form für die Interpolation liefert (z.B. ein ungenauerer, aber lückenloser Alternativ-Zähler). Wo diese Entity selbst keine Daten hat (z.B. vor ihrer Installation), wird dieser Abschnitt zeitanteilig gleichmässig interpoliert."
+        },
+        "target_entity": {
+          "name": "Ziel-Entity (optional)",
+          "description": "Der 1-0:1.8.0-Sensor, in den geschrieben wird. Wird automatisch ermittelt, wenn leer gelassen - funktioniert automatisch nur, wenn genau ein Gateway konfiguriert ist."
+        },
+        "monthly_kwh": {
+          "name": "Bekannte Monatswerte (optional)",
+          "description": "Zuordnung \"JJJJ-MM\": kWh für Monate, deren genauer Verbrauch schon bekannt ist - hat für diesen Monat Vorrang vor der Schätzung aus der Quell-Entity. Beispiel: {\"2026-01\": 130.5, \"2026-03\": 95}"
+        },
+        "dry_run": {
+          "name": "Testlauf",
+          "description": "Wenn aktiviert, wird nur berechnet und eine Zusammenfassung (inkl. Monats-Aufschlüsselung) zurückgegeben, ohne etwas in die Statistiken zu schreiben."
+        }
+      }
+    }
+  },
+  "_integration_version": "1.11.0"
 }

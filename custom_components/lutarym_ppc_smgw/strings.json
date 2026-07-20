@@ -55,5 +55,37 @@
       "cannot_connect": "Failed to connect to the gateway."
     }
   },
-  "_integration_version": "1.10.0"
+  "services": {
+    "import_history": {
+      "name": "Import history",
+      "description": "One-time import of a corrected historical statistics series for the 1-0:1.8.0 (grid draw) sensor - combines a start anchor, the current live value as end anchor, a source entity's day-to-day shape, and optional known monthly values.",
+      "fields": {
+        "start_date": {
+          "name": "Start date",
+          "description": "The date the historical series should start at."
+        },
+        "start_value": {
+          "name": "Start value (kWh)",
+          "description": "The known correct cumulative value at the start date, in kWh."
+        },
+        "source_entity": {
+          "name": "Source entity",
+          "description": "Entity whose statistics provide the day-to-day shape for interpolation (e.g. a less accurate but gapless alternative meter). Where this entity itself has no data (e.g. before it was installed), that portion is interpolated evenly over time."
+        },
+        "target_entity": {
+          "name": "Target entity (optional)",
+          "description": "The 1-0:1.8.0 sensor to write to. Auto-detected if left empty - only works automatically when exactly one gateway is configured."
+        },
+        "monthly_kwh": {
+          "name": "Known monthly values (optional)",
+          "description": "Map of \"YYYY-MM\": kWh for months where the exact consumption is already known - takes priority over the source entity's estimate for that month. Example: {\"2026-01\": 130.5, \"2026-03\": 95}"
+        },
+        "dry_run": {
+          "name": "Dry run",
+          "description": "If enabled, only computes and returns a summary (incl. monthly breakdown) without writing anything to the statistics."
+        }
+      }
+    }
+  },
+  "_integration_version": "1.11.0"
 }
