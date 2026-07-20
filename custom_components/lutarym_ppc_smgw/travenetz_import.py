@@ -1,4 +1,4 @@
-# Integrationsversion: 1.12.0
+# Integrationsversion: 1.13.0
 """1:1-Import einer TraveNetz/iMSys-CSV-Exportdatei (stündliche
 
 "Energie bezogen"-Werte) in die Langzeit-Statistik dieser Integration.

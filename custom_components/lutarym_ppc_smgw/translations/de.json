@@ -32,24 +32,10 @@
       },
       "history": {
         "title": "Optional: Historische Daten importieren",
-        "description": "Aktueller Live-Wert von 1-0:1.8.0 (Bezug): **{current_value}**.\n\nAlle Felder unten sind optional — leer lassen überspringt diesen Schritt komplett. Zwei Wege für einen Historien-Import:\n\n1) **CSV-Pfad**: eine TraveNetz-Exportdatei, die bereits auf dem HA-Host liegt (z.B. /config/imsys_export.csv) — wird 1:1 übernommen, keine Skalierung, keine andere Entity. \"Wert am Start\" ist der Zählerstand in der allerersten Zeile der Datei (0, falls sie bei Einbau beginnt).\n\n2) **Startdatum + Quell-Entity** (nur genutzt, falls kein CSV-Pfad angegeben ist): eine ungenauere, aber lückenlose Entity wird zwischen Startwert und dem oben gezeigten aktuellen Live-Wert skaliert. Wo die Quell-Entity keine Daten hat (z.B. vor Installation), wird zeitanteilig interpoliert. Bekannte, exakte Monatswerte unten haben für diesen Monat Vorrang vor der Schätzung.\n\nInstallierte Integrationsversion: {version}",
+        "description": "Lade eine TraveNetz-Exportdatei für OBIS 1-0:1.8.0 (Bezug, stündlich) hoch, um sie 1:1 zu importieren — keine Skalierung, keine andere Entity. Beide Felder leer lassen überspringt diesen Schritt komplett.\n\n\"Wert an der ersten Zeile\" ist der Zählerstand in der allerersten Zeile der Datei (0, falls sie bei Zähler-Einbau beginnt).\n\nInstallierte Integrationsversion: {version}",
         "data": {
-          "csv_path": "CSV-Dateipfad (1:1-Import, hat Vorrang)",
-          "start_date": "Startdatum (nur Modus 2)",
-          "start_value": "Wert am Start (kWh)",
-          "source_entity": "Quell-Entity (nur Modus 2, für Interpolation)",
-          "month_01": "Januar (kWh, optional)",
-          "month_02": "Februar (kWh, optional)",
-          "month_03": "März (kWh, optional)",
-          "month_04": "April (kWh, optional)",
-          "month_05": "Mai (kWh, optional)",
-          "month_06": "Juni (kWh, optional)",
-          "month_07": "Juli (kWh, optional)",
-          "month_08": "August (kWh, optional)",
-          "month_09": "September (kWh, optional)",
-          "month_10": "Oktober (kWh, optional)",
-          "month_11": "November (kWh, optional)",
-          "month_12": "Dezember (kWh, optional)"
+          "csv_upload": "TraveNetz-CSV-Export",
+          "start_value": "Wert an der ersten Zeile (kWh)"
         }
       }
     },
@@ -113,5 +99,5 @@
       }
     }
   },
-  "_integration_version": "1.12.0"
+  "_integration_version": "1.13.0"
 }

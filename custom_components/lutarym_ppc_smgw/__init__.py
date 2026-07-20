@@ -1,4 +1,4 @@
-# Integrationsversion: 1.12.0
+# Integrationsversion: 1.13.0
 """PPC Smart Meter Gateway (iMSys) Integration für Home Assistant.
 
 Einstiegspunkt der Integration (von Home Assistant automatisch anhand des
@@ -170,7 +170,13 @@ async def _async_process_pending_history_import(
     """
     payload = entry.data.get(ATTR_HISTORY_IMPORT)
     if not payload:
+        _LOGGER.debug(
+            "SMGW Historien-Import: kein Auftrag in entry.data gefunden - "
+            "Einrichtungsassistent wurde ohne CSV-Pfad/Startdatum abgeschlossen, "
+            "nichts zu tun."
+        )
         return
+    _LOGGER.info("SMGW Historien-Import: Auftrag gefunden, Modus=%s", payload.get("mode", "scaled"))
 
     registry = er.async_get(hass)
     target_entity: str | None = None
