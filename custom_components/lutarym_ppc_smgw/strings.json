@@ -32,11 +32,12 @@
       },
       "history": {
         "title": "Optional: import historical data",
-        "description": "Current live value of 1-0:1.8.0 (grid draw): **{current_value}** - this is used automatically as the end point, no need to enter it.\n\nAll fields below are optional. Leave them empty to skip this step entirely. To backfill history: enter a start date, the known correct value at that date, and a source entity whose shape (day-to-day variation) should be used for interpolation between the start date and now. Where the source entity itself has no data (e.g. before it was installed), that portion is interpolated evenly over time.\n\nIf you already know the exact consumption (kWh) for specific months, enter it below - it takes priority over the source entity's estimate for that month. Leave a month empty to derive it automatically.\n\nInstalled integration version: {version}",
+        "description": "Current live value of 1-0:1.8.0 (grid draw): **{current_value}**.\n\nAll fields below are optional - leave everything empty to skip this step. Two ways to backfill history:\n\n1) **CSV path**: a TraveNetz export file already placed on the HA host (e.g. /config/imsys_export.csv) - imported 1:1, no scaling, no other entity. \"Value at start\" is the meter reading at the very first row of the file (0 if it starts at installation).\n\n2) **Start date + source entity** (used only if no CSV path is given): a less accurate but gapless entity is scaled between the start value and the current live value shown above. Where the source entity has no data (e.g. before install), that portion is interpolated evenly over time. Known exact monthly values below take priority over the estimate for that month.\n\nInstalled integration version: {version}",
         "data": {
-          "start_date": "Start date",
-          "start_value": "Value at start date (kWh)",
-          "source_entity": "Source entity (for interpolation)",
+          "csv_path": "CSV file path (1:1 import, takes priority)",
+          "start_date": "Start date (mode 2 only)",
+          "start_value": "Value at start (kWh)",
+          "source_entity": "Source entity (mode 2 only, for interpolation)",
           "month_01": "January (kWh, optional)",
           "month_02": "February (kWh, optional)",
           "month_03": "March (kWh, optional)",
@@ -79,26 +80,30 @@
   "services": {
     "import_history": {
       "name": "Import history",
-      "description": "One-time import of a corrected historical statistics series for the 1-0:1.8.0 (grid draw) sensor - combines a start anchor, the current live value as end anchor, a source entity's day-to-day shape, and optional known monthly values.",
+      "description": "One-time import of a corrected historical statistics series for the 1-0:1.8.0 (grid draw) sensor. Two modes: csv_path (1:1 import of a TraveNetz export, takes priority) or start_date+source_entity (scaled interpolation between a start anchor and the current live value).",
       "fields": {
+        "csv_path": {
+          "name": "CSV file path (1:1 import)",
+          "description": "Path to a TraveNetz export file already present on the HA host, e.g. /config/imsys_export.csv. Imported 1:1 - no scaling, no other entity. Takes priority over start_date/source_entity if both are given."
+        },
         "start_date": {
-          "name": "Start date",
-          "description": "The date the historical series should start at."
+          "name": "Start date (scaled mode only)",
+          "description": "The date the historical series should start at. Only used when csv_path is not set."
         },
         "start_value": {
           "name": "Start value (kWh)",
-          "description": "The known correct cumulative value at the start date, in kWh."
+          "description": "The known correct cumulative value at the start (start_date for scaled mode, or the CSV's first row for csv_path mode - 0 if it starts at meter installation)."
         },
         "source_entity": {
-          "name": "Source entity",
-          "description": "Entity whose statistics provide the day-to-day shape for interpolation (e.g. a less accurate but gapless alternative meter). Where this entity itself has no data (e.g. before it was installed), that portion is interpolated evenly over time."
+          "name": "Source entity (scaled mode only)",
+          "description": "Entity whose statistics provide the day-to-day shape for interpolation (e.g. a less accurate but gapless alternative meter). Where this entity itself has no data (e.g. before it was installed), that portion is interpolated evenly over time. Only used when csv_path is not set."
         },
         "target_entity": {
           "name": "Target entity (optional)",
           "description": "The 1-0:1.8.0 sensor to write to. Auto-detected if left empty - only works automatically when exactly one gateway is configured."
         },
         "monthly_kwh": {
-          "name": "Known monthly values (optional)",
+          "name": "Known monthly values (scaled mode only, optional)",
           "description": "Map of \"YYYY-MM\": kWh for months where the exact consumption is already known - takes priority over the source entity's estimate for that month. Example: {\"2026-01\": 130.5, \"2026-03\": 95}"
         },
         "dry_run": {
@@ -108,5 +113,5 @@
       }
     }
   },
-  "_integration_version": "1.11.0"
+  "_integration_version": "1.12.0"
 }

@@ -1,4 +1,4 @@
-# Integrationsversion: 1.11.0
+# Integrationsversion: 1.12.0
 """Einmaliger Import einer korrigierten historischen Zeitreihe für den
 
 OBIS 1-0:1.8.0 ("Bezug") Sensor dieser Integration - aufgerufen über den
@@ -128,6 +128,36 @@ def _hourly_deltas(
     return deltas
 
 
+def _fill_leading_gap_with_mirror(
+    source_deltas: dict[datetime, float], hour_slots: list[datetime]
+) -> dict[datetime, float]:
+    """Füllt eine Lücke am ANFANG der Quell-Daten (z.B. weil die Quell-
+
+    Entity erst mitten im Zeitraum installiert wurde) mit der Form der
+    unmittelbar darauffolgenden, gleich langen Periode, statt mit einer
+    gleichmässigen Zeit-Interpolation - realistischer, ohne Rohdaten für
+    die Lücke selbst zu erfinden. Betrifft nur eine Lücke GANZ AM ANFANG;
+    Lücken mitten in der Reihe bleiben unverändert (fallen weiterhin auf
+    den Platzhalter in import_history zurück).
+    """
+    if not hour_slots:
+        return source_deltas
+
+    first_covered = next((ts for ts in hour_slots if ts in source_deltas), None)
+    if first_covered is None or first_covered == hour_slots[0]:
+        return source_deltas  # keine Lücke am Anfang, oder gar keine Quelldaten
+
+    gap_slots = [ts for ts in hour_slots if ts < first_covered]
+    donor_slots = [ts for ts in hour_slots if ts >= first_covered][: len(gap_slots)]
+
+    filled = dict(source_deltas)
+    for gap_ts, donor_ts in zip(gap_slots, donor_slots):
+        donor_val = source_deltas.get(donor_ts)
+        if donor_val is not None:
+            filled[gap_ts] = donor_val
+    return filled
+
+
 class HistoryImportError(Exception):
     """Fehler beim Aufbau/Import der historischen Reihe (nutzerlesbar)."""
 
@@ -171,6 +201,17 @@ async def import_history(
         )
     source_deltas = _hourly_deltas(source_points)
 
+    hour_slots: list[datetime] = []
+    cur = start_dt
+    while cur < end_dt:
+        hour_slots.append(cur)
+        cur += timedelta(hours=1)
+
+    # Lücke vor dem ersten Quell-Datenpunkt (z.B. vor Installation der
+    # Quell-Entity) mit der Form der direkt folgenden, gleich langen
+    # Periode auffüllen - siehe _fill_leading_gap_with_mirror.
+    source_deltas = _fill_leading_gap_with_mirror(source_deltas, hour_slots)
+
     month_ranges = _month_ranges(start_dt, end_dt)
     total_target = end_value_kwh - start_value_kwh
     fixed_total = 0.0
@@ -190,12 +231,6 @@ async def import_history(
             "negative Verbrauchswerte ergeben - bitte monthly_kwh, start_value oder "
             "start_date prüfen."
         )
-
-    hour_slots: list[datetime] = []
-    cur = start_dt
-    while cur < end_dt:
-        hour_slots.append(cur)
-        cur += timedelta(hours=1)
 
     def _budget_for(ts: datetime) -> _MonthBudget:
         for b in budgets:

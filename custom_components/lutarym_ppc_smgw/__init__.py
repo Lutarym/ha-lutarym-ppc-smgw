@@ -1,4 +1,4 @@
-# Integrationsversion: 1.11.0
+# Integrationsversion: 1.12.0
 """PPC Smart Meter Gateway (iMSys) Integration für Home Assistant.
 
 Einstiegspunkt der Integration (von Home Assistant automatisch anhand des
@@ -26,6 +26,7 @@ from homeassistant.helpers.httpx_client import create_async_httpx_client
 
 from .api import PPCSmgwClient
 from .const import (
+    ATTR_CSV_PATH,
     ATTR_DRY_RUN,
     ATTR_HISTORY_IMPORT,
     ATTR_MONTHLY_KWH,
@@ -42,6 +43,7 @@ from .const import (
 )
 from .coordinator import METER_OBIS_SEPARATOR, PPCSmgwCoordinator
 from .history_import import HistoryImportError, import_history
+from .travenetz_import import import_csv_history
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,9 +54,15 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BUTTON]
 
 IMPORT_HISTORY_SCHEMA = vol.Schema(
     {
-        vol.Required(ATTR_START_DATE): cv.date,
-        vol.Required(ATTR_START_VALUE): vol.Coerce(float),
-        vol.Required(ATTR_SOURCE_ENTITY): cv.entity_id,
+        # Modus 1 (Vorrang): 1:1-CSV-Import, siehe travenetz_import.py.
+        vol.Optional(ATTR_CSV_PATH): cv.string,
+        # Modus 2 (Fallback, falls kein csv_path): skalierte Quell-Entity,
+        # siehe history_import.py. start_date/source_entity sind für
+        # DIESEN Modus zwingend, aber auf Schema-Ebene optional, damit
+        # Modus 1 ohne sie auskommt - die Prüfung passiert im Handler.
+        vol.Optional(ATTR_START_DATE): cv.date,
+        vol.Optional(ATTR_START_VALUE): vol.Coerce(float),
+        vol.Optional(ATTR_SOURCE_ENTITY): cv.entity_id,
         vol.Optional(ATTR_MONTHLY_KWH): {cv.string: vol.Coerce(float)},
         vol.Optional(ATTR_TARGET_ENTITY): cv.entity_id,
         vol.Optional(ATTR_DRY_RUN, default=False): cv.boolean,
@@ -188,39 +196,62 @@ async def _async_process_pending_history_import(
         )
     else:
         try:
-            end_value = float(payload["end_value"])
-            unit = (payload.get("end_unit") or "").strip().lower()
-            if unit == "wh":
-                end_value = end_value / 1000
-
             entity_entry = registry.async_get(target_entity)
             target_name = (
                 (entity_entry.name or entity_entry.original_name) if entity_entry else None
             ) or target_entity
 
-            summary = await import_history(
-                hass,
-                target_statistic_id=target_entity,
-                target_name=target_name,
-                start_date=date.fromisoformat(payload["start_date"]),
-                start_value_kwh=float(payload["start_value"]),
-                source_entity_id=payload["source_entity"],
-                end_value_kwh=end_value,
-                monthly_kwh=payload.get("monthly_kwh") or {},
-                dry_run=False,
-            )
+            mode = payload.get("mode", "scaled")  # aeltere Auftraege (vor CSV-Support) hatten kein "mode"-Feld
+            if mode == "csv":
+                summary = await import_csv_history(
+                    hass,
+                    target_statistic_id=target_entity,
+                    target_name=target_name,
+                    csv_path=payload["csv_path"],
+                    start_value_kwh=float(payload.get("start_value") or 0.0),
+                    dry_run=False,
+                )
+                breakdown = ", ".join(
+                    f"{k}: {v:.1f} kWh" for k, v in summary["monthly_breakdown_kwh"].items()
+                )
+                message = (
+                    f"1:1-CSV-Import für {target_entity} abgeschlossen "
+                    f"({summary['csv_path']}).\n\n"
+                    f"Zeitraum: {summary['first_timestamp']} bis {summary['last_timestamp']}\n"
+                    f"Start: {summary['start_value_kwh']} kWh\n"
+                    f"Ende: {summary['final_computed_kwh']} kWh\n"
+                    f"{summary['hourly_points']} Stundenwerte geschrieben.\n\n"
+                    f"Monatsaufteilung: {breakdown}"
+                )
+            else:
+                end_value = float(payload["end_value"])
+                unit = (payload.get("end_unit") or "").strip().lower()
+                if unit == "wh":
+                    end_value = end_value / 1000
+
+                summary = await import_history(
+                    hass,
+                    target_statistic_id=target_entity,
+                    target_name=target_name,
+                    start_date=date.fromisoformat(payload["start_date"]),
+                    start_value_kwh=float(payload["start_value"]),
+                    source_entity_id=payload["source_entity"],
+                    end_value_kwh=end_value,
+                    monthly_kwh=payload.get("monthly_kwh") or {},
+                    dry_run=False,
+                )
+                breakdown = ", ".join(
+                    f"{k}: {v:.1f} kWh" for k, v in summary["monthly_breakdown_kwh"].items()
+                )
+                message = (
+                    f"Historien-Import für {target_entity} abgeschlossen.\n\n"
+                    f"Start: {summary['start_value_kwh']} kWh am {summary['start_date']}\n"
+                    f"Ende: {summary['final_computed_kwh']} kWh "
+                    f"(Ziel: {summary['end_value_kwh']} kWh)\n"
+                    f"{summary['hourly_points']} Stundenwerte geschrieben.\n\n"
+                    f"Monatsaufteilung: {breakdown}"
+                )
             _LOGGER.info("SMGW Historien-Import erfolgreich: %s", summary)
-            breakdown = ", ".join(
-                f"{k}: {v:.1f} kWh" for k, v in summary["monthly_breakdown_kwh"].items()
-            )
-            message = (
-                f"Historien-Import für {target_entity} abgeschlossen.\n\n"
-                f"Start: {summary['start_value_kwh']} kWh am {summary['start_date']}\n"
-                f"Ende: {summary['final_computed_kwh']} kWh "
-                f"(Ziel: {summary['end_value_kwh']} kWh)\n"
-                f"{summary['hourly_points']} Stundenwerte geschrieben.\n\n"
-                f"Monatsaufteilung: {breakdown}"
-            )
         except HistoryImportError as err:
             _LOGGER.error("SMGW Historien-Import fehlgeschlagen: %s", err)
             message = f"Historien-Import fehlgeschlagen: {err}"
@@ -253,16 +284,20 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     Schließen nötig (anders als bei der vorherigen aiohttp-Variante mit
     selbst erzeugter Session).
 
-    Der Service `import_history` bleibt bewusst registriert, solange
-    MINDESTENS EIN Config Entry existiert - erst wenn das letzte Gateway
-    entfernt wird, wird er auch wieder abgemeldet (siehe async_setup, wo
-    er domain-weit einmalig registriert wird).
+    Der Service `import_history` wird bewusst NICHT hier abgemeldet: ein
+    Reload (unload+setup DESSELBEN Entry, z.B. ausgelöst durch den
+    Update-Listener nach _async_process_pending_history_import) trifft
+    kurzzeitig genau die "letzter Entry entfernt"-Bedingung, obwohl der
+    Entry gar nicht wirklich verschwindet - würde man den Service dabei
+    abmelden, käme er nie wieder zurück, da async_setup (wo er registriert
+    wird) nur EINMAL beim echten HA-Start läuft, nicht bei jedem Reload.
+    Der Service bleibt daher für die Laufzeit von Home Assistant bestehen,
+    auch nachdem das letzte Gateway entfernt wurde (schadet nicht - der
+    Handler meldet einen klaren Fehler, wenn kein Gateway mehr da ist).
     """
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
-        if not hass.data[DOMAIN]:
-            hass.services.async_remove(DOMAIN, SERVICE_IMPORT_HISTORY)
     return unload_ok
 
 
@@ -316,9 +351,12 @@ async def _async_handle_import_history(hass: HomeAssistant, call: ServiceCall) -
     """Handler für den Service `lutarym_ppc_smgw.import_history`.
 
     Ermittelt die Ziel-Entity (explizit angegeben oder automatisch über
-    OBIS 1-0:1.8.0 gefunden), aktualisiert deren Coordinator für einen
-    möglichst frischen Endwert, und übergibt an history_import.py für die
-    eigentliche Berechnung/den Schreibvorgang.
+    OBIS 1-0:1.8.0 gefunden). Zwei Modi:
+      - csv_path angegeben -> 1:1-Import (travenetz_import.py), kein
+        Live-Endwert nötig, da die CSV ihren Endpunkt selbst mitbringt.
+      - sonst: start_date + source_entity müssen gesetzt sein -> skalierte
+        Quell-Entity über zwei Ankerpunkte (history_import.py), aktueller
+        Live-Wert wird als automatischer Endanker frisch abgerufen.
     """
     registry = er.async_get(hass)
     target_entity = call.data.get(ATTR_TARGET_ENTITY) or _find_target_1_8_0_entity(
@@ -330,6 +368,30 @@ async def _async_handle_import_history(hass: HomeAssistant, call: ServiceCall) -
         await coordinator.async_request_refresh()
 
     state = hass.states.get(target_entity)
+    entity_entry = registry.async_get(target_entity)
+    friendly_name = (
+        state.attributes.get("friendly_name") if state else None
+    ) or target_entity
+
+    csv_path = call.data.get(ATTR_CSV_PATH)
+    if csv_path:
+        summary = await import_csv_history(
+            hass,
+            target_statistic_id=target_entity,
+            target_name=friendly_name,
+            csv_path=csv_path,
+            start_value_kwh=call.data.get(ATTR_START_VALUE) or 0.0,
+            dry_run=call.data[ATTR_DRY_RUN],
+        )
+        summary["target_entity"] = target_entity
+        return summary
+
+    if not call.data.get(ATTR_START_DATE) or not call.data.get(ATTR_SOURCE_ENTITY):
+        raise HistoryImportError(
+            "Entweder 'csv_path' (1:1-Import) ODER 'start_date' zusammen mit "
+            "'source_entity' (skalierter Import) müssen angegeben werden."
+        )
+
     if state is None or state.state in (None, "unknown", "unavailable"):
         raise HistoryImportError(
             f"Ziel-Entity '{target_entity}' hat aktuell keinen gültigen Zustand - "
@@ -356,14 +418,12 @@ async def _async_handle_import_history(hass: HomeAssistant, call: ServiceCall) -
         )
         end_value_kwh = raw_value
 
-    friendly_name = state.attributes.get("friendly_name", target_entity)
-
     summary = await import_history(
         hass,
         target_statistic_id=target_entity,
         target_name=friendly_name,
         start_date=call.data[ATTR_START_DATE],
-        start_value_kwh=call.data[ATTR_START_VALUE],
+        start_value_kwh=call.data.get(ATTR_START_VALUE) or 0.0,
         source_entity_id=call.data[ATTR_SOURCE_ENTITY],
         end_value_kwh=end_value_kwh,
         monthly_kwh=call.data.get(ATTR_MONTHLY_KWH),

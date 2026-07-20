@@ -32,11 +32,12 @@
       },
       "history": {
         "title": "Optional: Historische Daten importieren",
-        "description": "Aktueller Live-Wert von 1-0:1.8.0 (Bezug): **{current_value}** - wird automatisch als Endpunkt verwendet, muss nicht eingegeben werden.\n\nAlle Felder unten sind optional. Leer lassen, um diesen Schritt komplett zu überspringen. Für einen Historien-Import: Startdatum, den bekannten korrekten Wert an diesem Datum, sowie eine Quell-Entity angeben, deren Form (Tag-zu-Tag-Verlauf) für die Interpolation zwischen Startdatum und jetzt genutzt werden soll. Wo die Quell-Entity selbst keine Daten hat (z.B. vor ihrer Installation), wird dieser Abschnitt zeitanteilig gleichmässig interpoliert.\n\nFalls du für einzelne Monate den genauen Verbrauch (kWh) schon kennst, trag ihn unten ein - er hat für diesen Monat Vorrang vor der Schätzung aus der Quell-Entity. Monat leer lassen, um ihn automatisch abzuleiten.\n\nInstallierte Integrationsversion: {version}",
+        "description": "Aktueller Live-Wert von 1-0:1.8.0 (Bezug): **{current_value}**.\n\nAlle Felder unten sind optional — leer lassen überspringt diesen Schritt komplett. Zwei Wege für einen Historien-Import:\n\n1) **CSV-Pfad**: eine TraveNetz-Exportdatei, die bereits auf dem HA-Host liegt (z.B. /config/imsys_export.csv) — wird 1:1 übernommen, keine Skalierung, keine andere Entity. \"Wert am Start\" ist der Zählerstand in der allerersten Zeile der Datei (0, falls sie bei Einbau beginnt).\n\n2) **Startdatum + Quell-Entity** (nur genutzt, falls kein CSV-Pfad angegeben ist): eine ungenauere, aber lückenlose Entity wird zwischen Startwert und dem oben gezeigten aktuellen Live-Wert skaliert. Wo die Quell-Entity keine Daten hat (z.B. vor Installation), wird zeitanteilig interpoliert. Bekannte, exakte Monatswerte unten haben für diesen Monat Vorrang vor der Schätzung.\n\nInstallierte Integrationsversion: {version}",
         "data": {
-          "start_date": "Startdatum",
-          "start_value": "Wert am Startdatum (kWh)",
-          "source_entity": "Quell-Entity (für Interpolation)",
+          "csv_path": "CSV-Dateipfad (1:1-Import, hat Vorrang)",
+          "start_date": "Startdatum (nur Modus 2)",
+          "start_value": "Wert am Start (kWh)",
+          "source_entity": "Quell-Entity (nur Modus 2, für Interpolation)",
           "month_01": "Januar (kWh, optional)",
           "month_02": "Februar (kWh, optional)",
           "month_03": "März (kWh, optional)",
@@ -79,26 +80,30 @@
   "services": {
     "import_history": {
       "name": "Historie importieren",
-      "description": "Einmaliger Import einer korrigierten historischen Statistik-Reihe für den 1-0:1.8.0-Sensor (Bezug) - kombiniert einen Startanker, den aktuellen Live-Wert als Endanker, die Tagesform einer Quell-Entity und optionale bekannte Monatswerte.",
+      "description": "Einmaliger Import einer korrigierten historischen Statistik-Reihe für den 1-0:1.8.0-Sensor (Bezug). Zwei Modi: csv_path (1:1-Import einer TraveNetz-Exportdatei, hat Vorrang) oder start_date+source_entity (skalierte Interpolation zwischen Startanker und aktuellem Live-Wert).",
       "fields": {
+        "csv_path": {
+          "name": "CSV-Dateipfad (1:1-Import)",
+          "description": "Pfad zu einer TraveNetz-Exportdatei, die bereits auf dem HA-Host liegt, z.B. /config/imsys_export.csv. Wird 1:1 übernommen - keine Skalierung, keine andere Entity. Hat Vorrang vor start_date/source_entity, falls beides angegeben ist."
+        },
         "start_date": {
-          "name": "Startdatum",
-          "description": "Das Datum, ab dem die historische Reihe beginnen soll."
+          "name": "Startdatum (nur skalierter Modus)",
+          "description": "Das Datum, ab dem die historische Reihe beginnen soll. Wird nur genutzt, wenn csv_path nicht gesetzt ist."
         },
         "start_value": {
           "name": "Startwert (kWh)",
-          "description": "Der bekannte korrekte kumulierte Wert am Startdatum, in kWh."
+          "description": "Der bekannte korrekte kumulierte Wert am Start (start_date im skalierten Modus, oder die erste Zeile der CSV im csv_path-Modus - 0, falls sie bei Zähler-Einbau beginnt)."
         },
         "source_entity": {
-          "name": "Quell-Entity",
-          "description": "Entity, deren Statistik die Tag-zu-Tag-Form für die Interpolation liefert (z.B. ein ungenauerer, aber lückenloser Alternativ-Zähler). Wo diese Entity selbst keine Daten hat (z.B. vor ihrer Installation), wird dieser Abschnitt zeitanteilig gleichmässig interpoliert."
+          "name": "Quell-Entity (nur skalierter Modus)",
+          "description": "Entity, deren Statistik die Tag-zu-Tag-Form für die Interpolation liefert (z.B. ein ungenauerer, aber lückenloser Alternativ-Zähler). Wo diese Entity selbst keine Daten hat (z.B. vor ihrer Installation), wird dieser Abschnitt zeitanteilig gleichmässig interpoliert. Wird nur genutzt, wenn csv_path nicht gesetzt ist."
         },
         "target_entity": {
           "name": "Ziel-Entity (optional)",
           "description": "Der 1-0:1.8.0-Sensor, in den geschrieben wird. Wird automatisch ermittelt, wenn leer gelassen - funktioniert automatisch nur, wenn genau ein Gateway konfiguriert ist."
         },
         "monthly_kwh": {
-          "name": "Bekannte Monatswerte (optional)",
+          "name": "Bekannte Monatswerte (nur skalierter Modus, optional)",
           "description": "Zuordnung \"JJJJ-MM\": kWh für Monate, deren genauer Verbrauch schon bekannt ist - hat für diesen Monat Vorrang vor der Schätzung aus der Quell-Entity. Beispiel: {\"2026-01\": 130.5, \"2026-03\": 95}"
         },
         "dry_run": {
@@ -108,5 +113,5 @@
       }
     }
   },
-  "_integration_version": "1.11.0"
+  "_integration_version": "1.12.0"
 }

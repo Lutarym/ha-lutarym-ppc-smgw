@@ -1,4 +1,4 @@
-# Integrationsversion: 1.11.0
+# Integrationsversion: 1.12.0
 """Config Flow für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from .api import (
     async_check_host_reachable,
 )
 from .const import (
+    ATTR_CSV_PATH,
     ATTR_HISTORY_IMPORT,
     ATTR_SOURCE_ENTITY,
     ATTR_START_DATE,
@@ -301,16 +302,21 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> "ConfigFlowResult":
         """Schritt 5 (optional): historische Korrektur für OBIS 1-0:1.8.0.
 
-        Ermittelt zuerst den AKTUELLEN Live-Wert von 1-0:1.8.0 direkt vom
-        Gateway (automatischer Endanker - siehe history_import.py, wird
-        NICHT abgefragt sondern angezeigt) - dafür werden die ausgewählten
-        Zähler der Reihe nach geprüft, bis einer eine 1.8.0-Zeile liefert
-        (ein Zähler kann auch nur 2.8.0/Einspeisung führen).
+        Zwei Modi, je nachdem was ausgefüllt wird:
+          - CSV-Pfad ausgefüllt -> 1:1-Import einer TraveNetz-Exportdatei
+            (siehe travenetz_import.py) - echte Messwerte, keine Schätzung.
+            Hat Vorrang vor Modus 2, falls beide ausgefüllt wären.
+          - Startdatum + Quell-Entity ausgefüllt (kein CSV-Pfad) -> die
+            ursprüngliche Variante: eine ungenaue Quell-Entity wird über
+            zwei Ankerpunkte skaliert (siehe history_import.py).
 
-        ALLE Felder in diesem Schritt sind optional: bleiben start_date,
-        start_value oder source_entity leer, wird kein Import durchgeführt
-        - die Integration wird ganz normal ohne Historien-Korrektur fertig
-        eingerichtet.
+        Ermittelt ausserdem den AKTUELLEN Live-Wert von 1-0:1.8.0 direkt
+        vom Gateway zur Anzeige (für Modus 2 als automatischer Endanker
+        genutzt; für Modus 1 nicht benötigt, da die CSV ihren Endpunkt
+        selbst mitbringt).
+
+        ALLE Felder sind optional - bleibt sowohl der CSV-Pfad als auch
+        Startdatum/Quell-Entity leer, wird kein Import durchgeführt.
         """
         if self._current_1_8_0_value is None and self._token is not None:
             for meter in self._meters:
@@ -333,41 +339,53 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             await self._async_close_client()
 
             history_payload: dict[str, Any] | None = None
-            raw_start_date = user_input.get(ATTR_START_DATE)
-            # WICHTIG: selector.DateSelector() liefert einen ISO-String
-            # ("2026-01-01"), KEIN datetime.date-Objekt - muss hier explizit
-            # geparst werden, sonst AttributeError auf .year weiter unten.
-            start_date = date.fromisoformat(raw_start_date) if raw_start_date else None
+            csv_path = (user_input.get(ATTR_CSV_PATH) or "").strip()
             start_value = user_input.get(ATTR_START_VALUE)
-            source_entity = user_input.get(ATTR_SOURCE_ENTITY)
-            if (
-                start_date
-                and start_value is not None
-                and source_entity
-                and self._current_1_8_0_value is not None
-            ):
-                monthly_kwh = {
-                    f"{start_date.year:04d}-{m:02d}": user_input[f"month_{m:02d}"]
-                    for m in range(1, 13)
-                    if user_input.get(f"month_{m:02d}") is not None
-                }
-                # Wird von __init__.py:async_setup_entry EINMALIG verarbeitet
-                # (siehe dort) und danach wieder aus entry.data entfernt -
-                # daher hier als reiner "Auftrag", nicht als Dauerkonfiguration.
+
+            if csv_path:
+                # Modus 1: 1:1-CSV-Import - Vorrang vor Modus 2.
                 history_payload = {
-                    "start_date": start_date.isoformat(),
-                    "start_value": start_value,
-                    "source_entity": source_entity,
-                    "monthly_kwh": monthly_kwh,
-                    "end_value": self._current_1_8_0_value,
-                    "end_unit": self._current_1_8_0_unit,
+                    "mode": "csv",
+                    "csv_path": csv_path,
+                    "start_value": start_value if start_value is not None else 0.0,
                 }
+            else:
+                raw_start_date = user_input.get(ATTR_START_DATE)
+                # WICHTIG: selector.DateSelector() liefert einen ISO-String
+                # ("2026-01-01"), KEIN datetime.date-Objekt - muss hier
+                # geparst werden, sonst AttributeError auf .year weiter unten.
+                start_date = date.fromisoformat(raw_start_date) if raw_start_date else None
+                source_entity = user_input.get(ATTR_SOURCE_ENTITY)
+                if (
+                    start_date
+                    and start_value is not None
+                    and source_entity
+                    and self._current_1_8_0_value is not None
+                ):
+                    monthly_kwh = {
+                        f"{start_date.year:04d}-{m:02d}": user_input[f"month_{m:02d}"]
+                        for m in range(1, 13)
+                        if user_input.get(f"month_{m:02d}") is not None
+                    }
+                    history_payload = {
+                        "mode": "scaled",
+                        "start_date": start_date.isoformat(),
+                        "start_value": start_value,
+                        "source_entity": source_entity,
+                        "monthly_kwh": monthly_kwh,
+                        "end_value": self._current_1_8_0_value,
+                        "end_unit": self._current_1_8_0_unit,
+                    }
 
             entry_data: dict[str, Any] = {
                 CONF_HOST: self._host,
                 CONF_USERNAME: self._username,
                 CONF_PASSWORD: self._password,
             }
+            # Wird von __init__.py:_async_process_pending_history_import
+            # EINMALIG verarbeitet und danach wieder aus entry.data
+            # entfernt - daher hier als reiner "Auftrag", nicht als
+            # Dauerkonfiguration.
             if history_payload:
                 entry_data[ATTR_HISTORY_IMPORT] = history_payload
 
@@ -383,7 +401,7 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         current_value_text = (
             f"{self._current_1_8_0_value} {self._current_1_8_0_unit or ''}".strip()
             if self._current_1_8_0_value is not None
-            else "konnte nicht ermittelt werden - Historien-Import in diesem Schritt nicht möglich"
+            else "konnte nicht ermittelt werden"
         )
 
         kwh_selector = selector.NumberSelector(
@@ -396,8 +414,9 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         }
         schema = vol.Schema(
             {
-                vol.Optional(ATTR_START_DATE): selector.DateSelector(),
+                vol.Optional(ATTR_CSV_PATH): str,
                 vol.Optional(ATTR_START_VALUE): kwh_selector,
+                vol.Optional(ATTR_START_DATE): selector.DateSelector(),
                 vol.Optional(ATTR_SOURCE_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 ),

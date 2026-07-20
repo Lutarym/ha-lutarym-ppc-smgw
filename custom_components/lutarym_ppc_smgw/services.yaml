@@ -1,12 +1,17 @@
 import_history:
   fields:
+    csv_path:
+      required: false
+      example: /config/imsys_export.csv
+      selector:
+        text: {}
     start_date:
-      required: true
+      required: false
       example: "2026-01-01"
       selector:
         date: {}
     start_value:
-      required: true
+      required: false
       example: 851
       selector:
         number:
@@ -15,7 +20,7 @@ import_history:
           unit_of_measurement: kWh
           mode: box
     source_entity:
-      required: true
+      required: false
       example: sensor.haus_strom_energie
       selector:
         entity:
