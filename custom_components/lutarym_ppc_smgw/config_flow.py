@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import html
 import logging
+from datetime import date
 from typing import Any
 
 import voluptuous as vol
@@ -332,7 +333,11 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             await self._async_close_client()
 
             history_payload: dict[str, Any] | None = None
-            start_date = user_input.get(ATTR_START_DATE)
+            raw_start_date = user_input.get(ATTR_START_DATE)
+            # WICHTIG: selector.DateSelector() liefert einen ISO-String
+            # ("2026-01-01"), KEIN datetime.date-Objekt - muss hier explizit
+            # geparst werden, sonst AttributeError auf .year weiter unten.
+            start_date = date.fromisoformat(raw_start_date) if raw_start_date else None
             start_value = user_input.get(ATTR_START_VALUE)
             source_entity = user_input.get(ATTR_SOURCE_ENTITY)
             if (
