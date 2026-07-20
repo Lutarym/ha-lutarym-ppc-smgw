@@ -45,6 +45,13 @@ ATTR_MONTHLY_KWH = "monthly_kwh"
 ATTR_TARGET_ENTITY = "target_entity"
 ATTR_DRY_RUN = "dry_run"
 
+# Schlüssel, unter dem der optionale Historien-Import-Auftrag aus dem
+# Einrichtungsassistenten (config_flow.py:async_step_history) EINMALIG in
+# entry.data zwischengespeichert wird - __init__.py:async_setup_entry
+# verarbeitet ihn beim ersten Laden und entfernt ihn danach wieder aus
+# entry.data (kein Dauerkonfigurationsfeld, sondern ein "Auftrag").
+ATTR_HISTORY_IMPORT = "history_import"
+
 # OBIS-Code des Zählerstands, den dieser Service korrigiert ("Bezug",
 # siehe METER_OBIS_SEPARATOR/coordinator.py für das Schlüssel-Format, in
 # dem dieser Code in coordinator.data auftaucht).

@@ -29,6 +29,27 @@
         "data": {
           "tariff_ids": "Evaluation profiles"
         }
+      },
+      "history": {
+        "title": "Optional: import historical data",
+        "description": "Current live value of 1-0:1.8.0 (grid draw): **{current_value}** - this is used automatically as the end point, no need to enter it.\n\nAll fields below are optional. Leave them empty to skip this step entirely. To backfill history: enter a start date, the known correct value at that date, and a source entity whose shape (day-to-day variation) should be used for interpolation between the start date and now. Where the source entity itself has no data (e.g. before it was installed), that portion is interpolated evenly over time.\n\nIf you already know the exact consumption (kWh) for specific months, enter it below - it takes priority over the source entity's estimate for that month. Leave a month empty to derive it automatically.\n\nInstalled integration version: {version}",
+        "data": {
+          "start_date": "Start date",
+          "start_value": "Value at start date (kWh)",
+          "source_entity": "Source entity (for interpolation)",
+          "month_01": "January (kWh, optional)",
+          "month_02": "February (kWh, optional)",
+          "month_03": "March (kWh, optional)",
+          "month_04": "April (kWh, optional)",
+          "month_05": "May (kWh, optional)",
+          "month_06": "June (kWh, optional)",
+          "month_07": "July (kWh, optional)",
+          "month_08": "August (kWh, optional)",
+          "month_09": "September (kWh, optional)",
+          "month_10": "October (kWh, optional)",
+          "month_11": "November (kWh, optional)",
+          "month_12": "December (kWh, optional)"
+        }
       }
     },
     "error": {

@@ -12,10 +12,11 @@ sowie sauberes Auf-/Abräumen beim Hinzufügen/Entfernen der Integration.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 
 import voluptuous as vol
 
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
@@ -26,6 +27,7 @@ from homeassistant.helpers.httpx_client import create_async_httpx_client
 from .api import PPCSmgwClient
 from .const import (
     ATTR_DRY_RUN,
+    ATTR_HISTORY_IMPORT,
     ATTR_MONTHLY_KWH,
     ATTR_SOURCE_ENTITY,
     ATTR_START_DATE,
@@ -124,12 +126,123 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Als Task NACH dem Setup einplanen (nicht hier awaiten!): die
+    # Verarbeitung aktualisiert am Ende entry.data, was den
+    # Update-Listener (Zeile oben) auslöst und die Integration neu lädt -
+    # das darf erst passieren, wenn dieses async_setup_entry bereits
+    # vollständig durchgelaufen und zurückgekehrt ist, sonst käme es zu
+    # einem Reload mitten in einem noch laufenden Setup.
+    if entry.data.get(ATTR_HISTORY_IMPORT):
+        hass.async_create_task(
+            _async_process_pending_history_import(hass, entry, coordinator)
+        )
+
     return True
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Lädt die Integration neu, wenn sich die Optionen (Zählerauswahl) ändern."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def _async_process_pending_history_import(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: PPCSmgwCoordinator
+) -> None:
+    """Verarbeitet einen einmaligen Historien-Import-Auftrag aus dem
+
+    Einrichtungsassistenten (siehe config_flow.py:async_step_history) -
+    nur beim ALLERERSTEN Laden nach der Einrichtung relevant (entry.data
+    enthält den Auftrag nur dann). Entfernt ihn danach IMMER wieder aus
+    entry.data, egal ob erfolgreich oder nicht - ein fehlgeschlagener
+    Import soll nicht bei jedem Neustart erneut versucht werden. Das
+    Ergebnis (Erfolg wie Misserfolg) wird per persistenter Benachrichtigung
+    UND im Log sichtbar gemacht, da an dieser Stelle keine interaktive
+    Formular-Rückmeldung mehr möglich ist.
+    """
+    payload = entry.data.get(ATTR_HISTORY_IMPORT)
+    if not payload:
+        return
+
+    registry = er.async_get(hass)
+    target_entity: str | None = None
+    for key, reading in coordinator.data.items():
+        if METER_OBIS_SEPARATOR not in key:
+            continue
+        if reading.get("obis") != TARGET_OBIS:
+            continue
+        unique_id = f"{entry.entry_id}_{key}"
+        target_entity = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+        if target_entity:
+            break
+
+    if target_entity is None:
+        _LOGGER.error(
+            "SMGW Historien-Import: konnte die Ziel-Entity (OBIS %s) nach der "
+            "Einrichtung nicht finden - Import wird übersprungen.",
+            TARGET_OBIS,
+        )
+        message = (
+            f"Historien-Import konnte nicht durchgeführt werden: keine Entity "
+            f"für OBIS {TARGET_OBIS} gefunden."
+        )
+    else:
+        try:
+            end_value = float(payload["end_value"])
+            unit = (payload.get("end_unit") or "").strip().lower()
+            if unit == "wh":
+                end_value = end_value / 1000
+
+            entity_entry = registry.async_get(target_entity)
+            target_name = (
+                (entity_entry.name or entity_entry.original_name) if entity_entry else None
+            ) or target_entity
+
+            summary = await import_history(
+                hass,
+                target_statistic_id=target_entity,
+                target_name=target_name,
+                start_date=date.fromisoformat(payload["start_date"]),
+                start_value_kwh=float(payload["start_value"]),
+                source_entity_id=payload["source_entity"],
+                end_value_kwh=end_value,
+                monthly_kwh=payload.get("monthly_kwh") or {},
+                dry_run=False,
+            )
+            _LOGGER.info("SMGW Historien-Import erfolgreich: %s", summary)
+            breakdown = ", ".join(
+                f"{k}: {v:.1f} kWh" for k, v in summary["monthly_breakdown_kwh"].items()
+            )
+            message = (
+                f"Historien-Import für {target_entity} abgeschlossen.\n\n"
+                f"Start: {summary['start_value_kwh']} kWh am {summary['start_date']}\n"
+                f"Ende: {summary['final_computed_kwh']} kWh "
+                f"(Ziel: {summary['end_value_kwh']} kWh)\n"
+                f"{summary['hourly_points']} Stundenwerte geschrieben.\n\n"
+                f"Monatsaufteilung: {breakdown}"
+            )
+        except HistoryImportError as err:
+            _LOGGER.error("SMGW Historien-Import fehlgeschlagen: %s", err)
+            message = f"Historien-Import fehlgeschlagen: {err}"
+        except Exception:  # noqa: BLE001 - darf das Setup der Integration nicht mitreissen
+            _LOGGER.exception("SMGW Historien-Import: unerwarteter Fehler")
+            message = (
+                "Historien-Import mit einem unerwarteten Fehler abgebrochen - "
+                "siehe Protokoll für Details."
+            )
+
+    persistent_notification.async_create(
+        hass,
+        message,
+        title="PPC SMGW Historien-Import",
+        notification_id=f"{DOMAIN}_history_import_{entry.entry_id}",
+    )
+
+    # Auftrag entfernen, damit er nicht bei jedem Neustart erneut läuft
+    # (löst den Update-Listener aus -> ein einmaliger, harmloser Reload).
+    new_data = dict(entry.data)
+    new_data.pop(ATTR_HISTORY_IMPORT, None)
+    hass.config_entries.async_update_entry(entry, data=new_data)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

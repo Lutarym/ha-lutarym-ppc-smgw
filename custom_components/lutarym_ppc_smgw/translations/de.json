@@ -29,6 +29,27 @@
         "data": {
           "tariff_ids": "Auswertungsprofile"
         }
+      },
+      "history": {
+        "title": "Optional: Historische Daten importieren",
+        "description": "Aktueller Live-Wert von 1-0:1.8.0 (Bezug): **{current_value}** - wird automatisch als Endpunkt verwendet, muss nicht eingegeben werden.\n\nAlle Felder unten sind optional. Leer lassen, um diesen Schritt komplett zu überspringen. Für einen Historien-Import: Startdatum, den bekannten korrekten Wert an diesem Datum, sowie eine Quell-Entity angeben, deren Form (Tag-zu-Tag-Verlauf) für die Interpolation zwischen Startdatum und jetzt genutzt werden soll. Wo die Quell-Entity selbst keine Daten hat (z.B. vor ihrer Installation), wird dieser Abschnitt zeitanteilig gleichmässig interpoliert.\n\nFalls du für einzelne Monate den genauen Verbrauch (kWh) schon kennst, trag ihn unten ein - er hat für diesen Monat Vorrang vor der Schätzung aus der Quell-Entity. Monat leer lassen, um ihn automatisch abzuleiten.\n\nInstallierte Integrationsversion: {version}",
+        "data": {
+          "start_date": "Startdatum",
+          "start_value": "Wert am Startdatum (kWh)",
+          "source_entity": "Quell-Entity (für Interpolation)",
+          "month_01": "Januar (kWh, optional)",
+          "month_02": "Februar (kWh, optional)",
+          "month_03": "März (kWh, optional)",
+          "month_04": "April (kWh, optional)",
+          "month_05": "Mai (kWh, optional)",
+          "month_06": "Juni (kWh, optional)",
+          "month_07": "Juli (kWh, optional)",
+          "month_08": "August (kWh, optional)",
+          "month_09": "September (kWh, optional)",
+          "month_10": "Oktober (kWh, optional)",
+          "month_11": "November (kWh, optional)",
+          "month_12": "Dezember (kWh, optional)"
+        }
       }
     },
     "error": {

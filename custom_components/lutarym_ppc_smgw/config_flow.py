@@ -22,7 +22,17 @@ from .api import (
     PPCSmgwParsingError,
     async_check_host_reachable,
 )
-from .const import CONF_METER_IDS, CONF_TARIFF_IDS, DOMAIN, VERSION
+from .const import (
+    ATTR_HISTORY_IMPORT,
+    ATTR_SOURCE_ENTITY,
+    ATTR_START_DATE,
+    ATTR_START_VALUE,
+    CONF_METER_IDS,
+    CONF_TARIFF_IDS,
+    DOMAIN,
+    TARGET_OBIS,
+    VERSION,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,6 +62,13 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         self._meters: list[dict[str, str]] = []
         self._tariff_profiles: list[dict[str, str]] = []
         self._selected_meter_ids: list[str] = []
+        self._selected_tariff_ids: list[str] = []
+        # Aktueller Live-Wert von OBIS 1-0:1.8.0 ("Bezug") - wird beim
+        # Betreten von async_step_history einmalig ermittelt (siehe dort)
+        # und als automatischer Endanker für den optionalen Historien-
+        # Import genutzt (siehe const.TARGET_OBIS/history_import.py).
+        self._current_1_8_0_value: float | None = None
+        self._current_1_8_0_unit: str | None = None
         # WICHTIG: Dieselbe httpx-Client-/PPCSmgwClient-Instanz wird über
         # ALLE Einrichtungsschritte hinweg wiederverwendet (nicht pro
         # Schritt neu erzeugt!). Anders als beim früheren aiohttp-Ansatz
@@ -242,37 +259,16 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 debug_info = html.escape(err.details)
 
         if user_input is not None and not errors:
-            await self._async_close_client()
-            return self.async_create_entry(
-                title=f"PPC SMGW ({self._host})",
-                data={
-                    CONF_HOST: self._host,
-                    CONF_USERNAME: self._username,
-                    CONF_PASSWORD: self._password,
-                },
-                options={
-                    CONF_METER_IDS: self._selected_meter_ids,
-                    CONF_TARIFF_IDS: user_input.get(CONF_TARIFF_IDS, []),
-                },
-            )
+            self._selected_tariff_ids = user_input.get(CONF_TARIFF_IDS, [])
+            return await self.async_step_history()
 
         if not self._tariff_profiles:
             # Kein Fehlerfall - manche Zähler haben schlicht keine
-            # Auswertungsprofile über HAN sichtbar. Direkt fertigstellen.
+            # Auswertungsprofile über HAN sichtbar. Direkt weiter zum
+            # optionalen Historien-Schritt.
             if not errors:
-                await self._async_close_client()
-                return self.async_create_entry(
-                    title=f"PPC SMGW ({self._host})",
-                    data={
-                        CONF_HOST: self._host,
-                        CONF_USERNAME: self._username,
-                        CONF_PASSWORD: self._password,
-                    },
-                    options={
-                        CONF_METER_IDS: self._selected_meter_ids,
-                        CONF_TARIFF_IDS: [],
-                    },
-                )
+                self._selected_tariff_ids = []
+                return await self.async_step_history()
             return self.async_show_form(
                 step_id="tariffs",
                 data_schema=vol.Schema({}),
@@ -297,6 +293,119 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="tariffs",
             data_schema=schema,
             description_placeholders={"debug_info": "", "version": VERSION},
+        )
+
+    async def async_step_history(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "ConfigFlowResult":
+        """Schritt 5 (optional): historische Korrektur für OBIS 1-0:1.8.0.
+
+        Ermittelt zuerst den AKTUELLEN Live-Wert von 1-0:1.8.0 direkt vom
+        Gateway (automatischer Endanker - siehe history_import.py, wird
+        NICHT abgefragt sondern angezeigt) - dafür werden die ausgewählten
+        Zähler der Reihe nach geprüft, bis einer eine 1.8.0-Zeile liefert
+        (ein Zähler kann auch nur 2.8.0/Einspeisung führen).
+
+        ALLE Felder in diesem Schritt sind optional: bleiben start_date,
+        start_value oder source_entity leer, wird kein Import durchgeführt
+        - die Integration wird ganz normal ohne Historien-Korrektur fertig
+        eingerichtet.
+        """
+        if self._current_1_8_0_value is None and self._token is not None:
+            for meter in self._meters:
+                if meter["label"] not in self._selected_meter_ids:
+                    continue
+                try:
+                    readings = await self._client.get_meter_readings(self._token, meter["mid"])
+                except (PPCSmgwConnectionError, PPCSmgwAuthError):
+                    continue
+                match = next((r for r in readings if r.get("obis") == TARGET_OBIS), None)
+                if match and match.get("value"):
+                    try:
+                        self._current_1_8_0_value = float(str(match["value"]).replace(",", "."))
+                        self._current_1_8_0_unit = match.get("unit")
+                    except ValueError:
+                        pass
+                    break
+
+        if user_input is not None:
+            await self._async_close_client()
+
+            history_payload: dict[str, Any] | None = None
+            start_date = user_input.get(ATTR_START_DATE)
+            start_value = user_input.get(ATTR_START_VALUE)
+            source_entity = user_input.get(ATTR_SOURCE_ENTITY)
+            if (
+                start_date
+                and start_value is not None
+                and source_entity
+                and self._current_1_8_0_value is not None
+            ):
+                monthly_kwh = {
+                    f"{start_date.year:04d}-{m:02d}": user_input[f"month_{m:02d}"]
+                    for m in range(1, 13)
+                    if user_input.get(f"month_{m:02d}") is not None
+                }
+                # Wird von __init__.py:async_setup_entry EINMALIG verarbeitet
+                # (siehe dort) und danach wieder aus entry.data entfernt -
+                # daher hier als reiner "Auftrag", nicht als Dauerkonfiguration.
+                history_payload = {
+                    "start_date": start_date.isoformat(),
+                    "start_value": start_value,
+                    "source_entity": source_entity,
+                    "monthly_kwh": monthly_kwh,
+                    "end_value": self._current_1_8_0_value,
+                    "end_unit": self._current_1_8_0_unit,
+                }
+
+            entry_data: dict[str, Any] = {
+                CONF_HOST: self._host,
+                CONF_USERNAME: self._username,
+                CONF_PASSWORD: self._password,
+            }
+            if history_payload:
+                entry_data[ATTR_HISTORY_IMPORT] = history_payload
+
+            return self.async_create_entry(
+                title=f"PPC SMGW ({self._host})",
+                data=entry_data,
+                options={
+                    CONF_METER_IDS: self._selected_meter_ids,
+                    CONF_TARIFF_IDS: self._selected_tariff_ids,
+                },
+            )
+
+        current_value_text = (
+            f"{self._current_1_8_0_value} {self._current_1_8_0_unit or ''}".strip()
+            if self._current_1_8_0_value is not None
+            else "konnte nicht ermittelt werden - Historien-Import in diesem Schritt nicht möglich"
+        )
+
+        kwh_selector = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                mode=selector.NumberSelectorMode.BOX, unit_of_measurement="kWh"
+            )
+        )
+        month_fields = {
+            vol.Optional(f"month_{m:02d}"): kwh_selector for m in range(1, 13)
+        }
+        schema = vol.Schema(
+            {
+                vol.Optional(ATTR_START_DATE): selector.DateSelector(),
+                vol.Optional(ATTR_START_VALUE): kwh_selector,
+                vol.Optional(ATTR_SOURCE_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                **month_fields,
+            }
+        )
+        return self.async_show_form(
+            step_id="history",
+            data_schema=schema,
+            description_placeholders={
+                "version": VERSION,
+                "current_value": current_value_text,
+            },
         )
 
     @staticmethod
