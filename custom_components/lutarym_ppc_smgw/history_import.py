@@ -32,7 +32,11 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
 from homeassistant.components.recorder import get_instance
-from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+from homeassistant.components.recorder.models import (
+    StatisticData,
+    StatisticMeanType,
+    StatisticMetaData,
+)
 from homeassistant.components.recorder.statistics import (
     async_import_statistics,
     statistics_during_period,
@@ -253,7 +257,20 @@ async def import_history(
     month_summary: dict[str, float] = {}
     for i, ts in enumerate(hour_slots):
         cumulative += result_kwh[i]
-        stats.append(StatisticData(start=ts, sum=round(cumulative, 4)))
+        # WICHTIG: 'state' MUSS mitgeschrieben werden, nicht nur 'sum'. Laut
+        # offizieller Doku wird 'sum' "offset by the sensor's first valid
+        # state" berechnet - Home Assistants eigener, laufender Statistik-
+        # Compiler (der für die live weiterverfolgte 1.8.0-Entity jede
+        # Stunde neu läuft) braucht das 'state' des letzten Punkts als
+        # Referenz, um den nächsten Delta korrekt draufzurechnen. Ohne
+        # 'state' hat er keinen Bezugspunkt und fängt faktisch bei 0 neu an
+        # (genau das Symptom: Summe bricht nach dem Import scheinbar ein).
+        # Da end_value_kwh der ECHTE Live-Gerätewert ist (kein synthetischer
+        # Offset wie im Fronius-Fall), ist state=sum hier auch inhaltlich
+        # korrekt - die importierte Reihe endet exakt auf dem echten Stand.
+        stats.append(
+            StatisticData(start=ts, state=round(cumulative, 4), sum=round(cumulative, 4))
+        )
         key = f"{ts.year:04d}-{ts.month:02d}"
         month_summary[key] = month_summary.get(key, 0.0) + result_kwh[i]
 
@@ -272,6 +289,7 @@ async def import_history(
 
     metadata = StatisticMetaData(
         has_mean=False,
+        mean_type=StatisticMeanType.NONE,
         has_sum=True,
         name=target_name,
         source="recorder",
