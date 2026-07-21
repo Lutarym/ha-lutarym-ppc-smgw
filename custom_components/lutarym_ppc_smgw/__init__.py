@@ -1,4 +1,4 @@
-# Integrationsversion: 1.13.0
+# Integrationsversion: 1.13.1
 """PPC Smart Meter Gateway (iMSys) Integration für Home Assistant.
 
 Einstiegspunkt der Integration (von Home Assistant automatisch anhand des
@@ -209,21 +209,57 @@ async def _async_process_pending_history_import(
 
             mode = payload.get("mode", "scaled")  # aeltere Auftraege (vor CSV-Support) hatten kein "mode"-Feld
             if mode == "csv":
+                # Live-Wert HIER neu abrufen (nicht den evtl. veralteten aus
+                # dem Auftrag) - überbrückt die Zeit zwischen dem letzten
+                # CSV-Punkt und jetzt UND überschreibt dabei automatisch
+                # etwaige alte/überholte Statistik-Reste in diesem Fenster
+                # (siehe import_csv_history: extend_to_now_value_kwh).
+                await coordinator.async_request_refresh()
+                extend_value: float | None = None
+                fresh_state = hass.states.get(target_entity)
+                if fresh_state is not None and fresh_state.state not in (
+                    None,
+                    "unknown",
+                    "unavailable",
+                ):
+                    try:
+                        raw_value = float(str(fresh_state.state).replace(",", "."))
+                        unit = (
+                            fresh_state.attributes.get("unit_of_measurement") or ""
+                        ).strip().lower()
+                        extend_value = raw_value / 1000 if unit == "wh" else raw_value
+                    except ValueError:
+                        _LOGGER.warning(
+                            "SMGW Historien-Import: aktueller Zustand von '%s' "
+                            "('%s') ist keine Zahl - Brücke bis 'jetzt' wird "
+                            "übersprungen.",
+                            target_entity,
+                            fresh_state.state,
+                        )
+
                 summary = await import_csv_history(
                     hass,
                     target_statistic_id=target_entity,
                     target_name=target_name,
                     csv_path=payload["csv_path"],
                     start_value_kwh=float(payload.get("start_value") or 0.0),
+                    extend_to_now_value_kwh=extend_value,
                     dry_run=False,
                 )
                 breakdown = ", ".join(
                     f"{k}: {v:.1f} kWh" for k, v in summary["monthly_breakdown_kwh"].items()
                 )
+                if summary.get("bridge_skipped_reason"):
+                    bridge_note = f" (⚠️ Brücke NICHT geschrieben: {summary['bridge_skipped_reason']})"
+                elif summary.get("bridged_hours_to_now"):
+                    bridge_note = f" (+ {summary['bridged_hours_to_now']} Std. bis jetzt überbrückt)"
+                else:
+                    bridge_note = " (keine Brücke bis jetzt - aktueller Wert nicht verfügbar)"
                 message = (
                     f"1:1-CSV-Import für {target_entity} abgeschlossen "
                     f"({summary['csv_path']}).\n\n"
-                    f"Zeitraum: {summary['first_timestamp']} bis {summary['last_timestamp']}\n"
+                    f"Zeitraum: {summary['first_timestamp']} bis "
+                    f"{summary['last_timestamp']}{bridge_note}\n"
                     f"Start: {summary['start_value_kwh']} kWh\n"
                     f"Ende: {summary['final_computed_kwh']} kWh\n"
                     f"{summary['hourly_points']} Stundenwerte geschrieben.\n\n"
@@ -381,12 +417,27 @@ async def _async_handle_import_history(hass: HomeAssistant, call: ServiceCall) -
 
     csv_path = call.data.get(ATTR_CSV_PATH)
     if csv_path:
+        extend_value: float | None = None
+        if state is not None and state.state not in (None, "unknown", "unavailable"):
+            try:
+                raw_value = float(str(state.state).replace(",", "."))
+                unit = (state.attributes.get("unit_of_measurement") or "").strip().lower()
+                extend_value = raw_value / 1000 if unit == "wh" else raw_value
+            except ValueError:
+                _LOGGER.warning(
+                    "SMGW Historien-Import: aktueller Zustand von '%s' ('%s') ist "
+                    "keine Zahl - Brücke bis 'jetzt' wird übersprungen.",
+                    target_entity,
+                    state.state,
+                )
+
         summary = await import_csv_history(
             hass,
             target_statistic_id=target_entity,
             target_name=friendly_name,
             csv_path=csv_path,
             start_value_kwh=call.data.get(ATTR_START_VALUE) or 0.0,
+            extend_to_now_value_kwh=extend_value,
             dry_run=call.data[ATTR_DRY_RUN],
         )
         summary["target_entity"] = target_entity
