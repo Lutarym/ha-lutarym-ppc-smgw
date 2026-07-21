@@ -1,4 +1,4 @@
-# Integrationsversion: 1.13.1
+# Integrationsversion: 1.13.2
 """Einmaliger Import einer korrigierten historischen Zeitreihe für den
 
 OBIS 1-0:1.8.0 ("Bezug") Sensor dieser Integration - aufgerufen über den
@@ -330,6 +330,11 @@ async def import_history(
         source="recorder",
         statistic_id=target_statistic_id,
         unit_of_measurement="kWh",
+        unit_class="energy",
     )
-    await async_import_statistics(hass, metadata, stats)
+    # WICHTIG: async_import_statistics ist mit @callback markiert (siehe
+    # homeassistant/components/recorder/statistics.py) - SYNCHRON, reiht nur
+    # einen Job in die Recorder-Warteschlange ein und gibt None zurück. NICHT
+    # awaiten, sonst "TypeError: 'NoneType' object can't be awaited".
+    async_import_statistics(hass, metadata, stats)
     return summary
