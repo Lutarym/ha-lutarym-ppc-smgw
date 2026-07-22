@@ -1,4 +1,4 @@
-# Integrationsversion: 1.14.1
+# Integrationsversion: 1.15.0
 """Config Flow für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 from __future__ import annotations

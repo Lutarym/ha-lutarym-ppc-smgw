@@ -1,17 +1,18 @@
-# Integrationsversion: 1.14.1
+# Integrationsversion: 1.15.0
 """Repariert einen Statistik-Reset (sum auf 0 gefallen, state aber
 
-korrekt weitergelaufen) OHNE zu raten oder zu interpolieren.
+korrekt weitergelaufen) UND füllt eine davorliegende echte Lücke
+(gar keine Datenpunkte, z.B. durch eine Verbindungsstörung) linear auf.
 
-Anders als history_import.py/travenetz_import.py (die fehlende Daten
-schätzen/skalieren) korrigiert dieses Modul bereits VORHANDENE, aber
-falsch referenzierte Datenpunkte: wenn 'sum' zu einem bestimmten
-Zeitpunkt fälschlich auf 0 zurückgesetzt wurde (z.B. durch einen HA-
-internen Effekt beim Statistik-Tracking) und von dort an KORREKT relativ
-weiterzählt, muss nur der EINE fehlende Offset (der letzte gültige Stand
-vor dem Reset) auf jeden betroffenen Punkt addiert werden - exakt, ohne
-Schätzung, da die relativen Zuwächse seit dem Reset bereits real und
-korrekt aufgezeichnet sind.
+Zwei Teile, in einem Rutsch:
+  1. Lücke (letzter guter Punkt bis zum ersten "kaputten" Punkt): keine
+     echten Daten vorhanden - wird linear zwischen den beiden bekannten
+     Randwerten interpoliert (wie bei travenetz_import.py, aber hier für
+     eine reine Zeit-Lücke statt für eine Quell-Entity ohne Abdeckung).
+  2. Bereits vorhandene, aber falsch referenzierte Punkte (fälschlich bei
+     0 gestartet): werden EXAKT um den richtigen Offset (letzter gültiger
+     Stand vor der Lücke) verschoben - keine Schätzung, da die relativen
+     Zuwächse seit dem Reset bereits real und korrekt aufgezeichnet sind.
 
 WICHTIG (siehe Empfehlung an den Nutzer in der Service-Beschreibung):
 Vor dem Ausführen sollte der Recorder pausiert werden
@@ -46,10 +47,11 @@ async def repair_statistics_reset(
     since: datetime,
     dry_run: bool = False,
 ) -> dict:
-    """Korrigiert alle Punkte AB `since` um den exakten Offset (letzter
+    """Füllt die Lücke vor `since` linear auf UND korrigiert alle bereits
 
-    gültiger Punkt VOR `since`) - keine Schätzung, reine Verschiebung
-    bereits vorhandener, aber falsch referenzierter Werte.
+    vorhandenen Punkte AB `since` um den exakten Offset (letzter gültiger
+    Punkt VOR der Lücke) - ergibt einen durchgängigen, sauber ansteigenden
+    Verlauf ohne Zeitloch und ohne Sprung.
     """
     if since.tzinfo is None:
         since = since.replace(tzinfo=timezone.utc)
@@ -73,18 +75,44 @@ async def repair_statistics_reset(
             "reparieren. Bitte 'since' prüfen."
         )
 
-    offset = before[-1][1]
-    offset_timestamp = before[-1][0]
+    last_good_ts, last_good_val = before[-1]
+    offset = last_good_val
+    first_broken_ts = broken[0][0]
 
-    stats: list[StatisticData] = []
-    for ts, broken_value in broken:
-        corrected = round(broken_value + offset, 4)
-        stats.append(StatisticData(start=ts, state=corrected, sum=corrected))
+    # Teil 1: bereits vorhandene "kaputte" Punkte um den Offset verschieben.
+    corrected: list[tuple[datetime, float]] = [
+        (ts, round(v + offset, 4)) for ts, v in broken
+    ]
+
+    # Teil 2: echte Zeit-Lücke zwischen letztem gutem Punkt und dem ersten
+    # (jetzt korrigierten) Punkt linear auffüllen - nur falls dazwischen
+    # tatsächlich Stunden OHNE jeden Eintrag liegen.
+    gap_slots: list[datetime] = []
+    cur = last_good_ts + timedelta(hours=1)
+    while cur < first_broken_ts:
+        gap_slots.append(cur)
+        cur += timedelta(hours=1)
+
+    interpolated: list[tuple[datetime, float]] = []
+    if gap_slots:
+        target_val = corrected[0][1]
+        span = target_val - last_good_val
+        n = len(gap_slots) + 1  # +1: der Schritt bis zum ersten korrigierten Punkt zählt mit
+        for i, ts in enumerate(gap_slots, start=1):
+            interpolated.append((ts, round(last_good_val + span * (i / n), 4)))
+
+    all_points = sorted(interpolated + corrected, key=lambda item: item[0])
+    stats: list[StatisticData] = [
+        StatisticData(start=ts, state=v, sum=v) for ts, v in all_points
+    ]
 
     summary = {
-        "hourly_points_corrected": len(stats),
+        "hourly_points_corrected": len(corrected),
+        "hourly_points_interpolated": len(interpolated),
         "offset_kwh": offset,
-        "offset_reference_timestamp": offset_timestamp.isoformat(),
+        "offset_reference_timestamp": last_good_ts.isoformat(),
+        "gap_filled_from": interpolated[0][0].isoformat() if interpolated else None,
+        "gap_filled_to": interpolated[-1][0].isoformat() if interpolated else None,
         "repaired_from": broken[0][0].isoformat(),
         "repaired_to": broken[-1][0].isoformat(),
         "value_before_repair": broken[-1][1],
@@ -109,3 +137,4 @@ async def repair_statistics_reset(
     # travenetz_import.py/history_import.py für Details - nicht awaiten.
     async_import_statistics(hass, metadata, stats)
     return summary
+
