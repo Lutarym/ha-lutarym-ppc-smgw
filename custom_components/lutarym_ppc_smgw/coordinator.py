@@ -1,4 +1,4 @@
-# Integrationsversion: 1.16.0
+# Integrationsversion: 1.17.0
 """DataUpdateCoordinator für das PPC Smart Meter Gateway.
 
 Ein Update-Zyklus (_async_update_data) entspricht genau einem
@@ -40,6 +40,19 @@ _LOGGER = logging.getLogger(__name__)
 # bei WIEDERHOLTEN, aufeinanderfolgenden Fehlern (echter, anhaltender
 # Ausfall) wird sie wie bisher als nicht verfügbar markiert.
 MAX_CONSECUTIVE_FAILURES_BEFORE_UNAVAILABLE = 3
+
+# Siehe PPCSmgwCoordinator._validate_meter_reading: Toleranzen für die
+# Plausibilitätsprüfung einzelner Zähler-Messwerte (state_class
+# total_increasing, kann real niemals sinken). NEGATIVE_TOLERANCE_KWH
+# erlaubt minimales Mess-Rauschen bei einem Rücksprung, bevor der Wert
+# verworfen wird; MAX_PLAUSIBLE_INCREASE_KWH_PER_POLL ist eine
+# grosszügige Obergrenze für einen einzelnen Auslesezyklus (Standard-
+# Intervall 900s/15min) - deutlich über realistischer Haushalts-
+# Spitzenlast, damit legitime hohe Verbräuche (z.B. Wallbox-Laden) nicht
+# fälschlich verworfen werden, aber klare Glitches (Vorzeichen-Umkehr,
+# Verdopplung, Reset) zuverlässig erkannt werden.
+NEGATIVE_TOLERANCE_KWH = 0.5
+MAX_PLAUSIBLE_INCREASE_KWH_PER_POLL = 20.0
 
 # Präfix für Auswertungsprofil-Sensoren im data-dict, damit sie nicht mit
 # Zähler-Messwert-Schlüsseln kollidieren können.
@@ -111,6 +124,12 @@ class PPCSmgwCoordinator(DataUpdateCoordinator[dict[str, dict]]):
         self.available_tariff_profiles: list[dict[str, str]] = []
         # Siehe MAX_CONSECUTIVE_FAILURES_BEFORE_UNAVAILABLE weiter oben.
         self._consecutive_failures = 0
+        # Siehe _validate_meter_reading: letzter plausibler Messwert je
+        # Zähler-Label::OBIS-Schlüssel, um offensichtlich unsinnige
+        # Einzelwerte (negativ, Rücksprung, unplausibler Sprung) VOR dem
+        # Schreiben in die Entity abzufangen, statt sie ungeprüft
+        # durchzureichen.
+        self._last_good_meter_values: dict[str, float] = {}
 
     async def _async_update_data(self) -> dict[str, dict]:
         token: str | None = None
@@ -146,7 +165,8 @@ class PPCSmgwCoordinator(DataUpdateCoordinator[dict[str, dict]]):
                 # Ein Zähler kann mehrere OBIS-Zeilen liefern (1.8.0 UND
                 # 2.8.0) - jede wird zu einem eigenen data-Eintrag/Sensor.
                 for reading in readings:
-                    data[f"{label}{METER_OBIS_SEPARATOR}{reading['obis']}"] = reading
+                    key = f"{label}{METER_OBIS_SEPARATOR}{reading['obis']}"
+                    data[key] = self._validate_meter_reading(key, reading)
 
             if not data and labels_to_fetch:
                 # Alle konfigurierten Zähler wurden nicht gefunden - meist,
@@ -239,6 +259,70 @@ class PPCSmgwCoordinator(DataUpdateCoordinator[dict[str, dict]]):
             # IMMER ausloggen, auch bei Fehlern - siehe Klassen-Docstring.
             if token:
                 await self.client.logout(token)
+
+    def _validate_meter_reading(self, key: str, reading: dict) -> dict:
+        """Plausibilitätsprüfung EINES Zähler-Messwerts (state_class
+
+        total_increasing) VOR dem Speichern - fängt offensichtlich
+        unsinnige Einzelwerte ab, die trotz erfolgreicher Verbindung vom
+        Gateway/HAN kommen können (beobachtet: Vorzeichen-Umkehr,
+        Verdopplung, Rücksprung auf 0 - vermutlich ein seltener
+        Parsing-/Übertragungs-Glitch, nicht reproduzierbar nachvollzogen).
+
+        Bei einem als unplausibel erkannten Wert wird NICHT der rohe Wert
+        übernommen, sondern der letzte bekannte plausible Wert
+        beibehalten (die Entity bleibt dadurch auf ihrem vorherigen Stand
+        stehen, statt einen Fehlwert anzuzeigen oder in die Langzeit-
+        Statistik einfliessen zu lassen) - der ECHTE aktuelle Wert wird
+        beim nächsten, plausiblen Auslesezyklus ganz normal übernommen,
+        es geht also nichts dauerhaft verloren.
+
+        Betrifft nur echte Zähler-Messwerte (1-0:1.8.0/2-0:2.8.0 o.ä.),
+        NICHT Auswertungsprofile (siehe METER_OBIS_SEPARATOR-Prüfung im
+        Aufrufer) - deren Werte haben andere Wertebereiche/Semantik.
+        """
+        raw = reading.get("value")
+        try:
+            value = float(str(raw).replace(",", "."))
+        except (TypeError, ValueError):
+            return reading  # keine Zahl - Sensor-Entity behandelt das selbst (native_value gibt None)
+
+        last_good = self._last_good_meter_values.get(key)
+        implausible_reason: str | None = None
+        if value < 0:
+            implausible_reason = "negativer Wert"
+        elif last_good is not None:
+            if value < last_good - NEGATIVE_TOLERANCE_KWH:
+                implausible_reason = (
+                    f"Rücksprung von {last_good:.3f} auf {value:.3f} "
+                    f"(Zähler kann nicht sinken)"
+                )
+            elif value > last_good + MAX_PLAUSIBLE_INCREASE_KWH_PER_POLL:
+                implausible_reason = (
+                    f"unplausibler Sprung von {last_good:.3f} auf {value:.3f} "
+                    f"(> {MAX_PLAUSIBLE_INCREASE_KWH_PER_POLL} kWh in einem Zyklus)"
+                )
+
+        if implausible_reason is not None:
+            _LOGGER.warning(
+                "SMGW: Messwert für '%s' verworfen (%s) - letzter bekannter "
+                "plausibler Wert (%s) wird beibehalten.",
+                key,
+                implausible_reason,
+                last_good if last_good is not None else "keiner - erster Zyklus",
+            )
+            if last_good is None:
+                # Kein Referenzwert vorhanden (allererster Zyklus) - kann
+                # nicht sinnvoll verworfen werden, nur ein negativer Wert
+                # wird in diesem Sonderfall trotzdem abgefangen.
+                if value < 0:
+                    return {**reading, "value": None}
+                self._last_good_meter_values[key] = value
+                return reading
+            return {**reading, "value": last_good}
+
+        self._last_good_meter_values[key] = value
+        return reading
 
 
 def build_device_info(coordinator: PPCSmgwCoordinator, entry: ConfigEntry) -> DeviceInfo:
