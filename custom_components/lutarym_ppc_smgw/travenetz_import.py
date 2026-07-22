@@ -1,4 +1,4 @@
-# Integrationsversion: 1.13.2
+# Integrationsversion: 1.14.0
 """1:1-Import einer TraveNetz/iMSys-CSV-Exportdatei (stündliche
 
 "Energie bezogen"-Werte) in die Langzeit-Statistik dieser Integration.
@@ -196,14 +196,28 @@ async def import_csv_history(
             # Plausibilitätsprüfung: der aktuelle Live-Wert ist ein EINZELNER
             # Schnappschuss vom HAN-Interface - bei einem Auslesefehler/
             # Glitch würde er blind einen falschen Sprung (oder Einbruch!)
-            # festschreiben. Zwei Fälle werden abgefangen:
-            #  a) span < 0: der "aktuelle" Wert läge UNTER dem CSV-Endstand -
-            #     für einen total_increasing-Zähler grundsätzlich unmöglich,
-            #     unabhängig von der Höhe. Wird IMMER blockiert.
-            #  b) span positiv, aber unrealistisch hoch (siehe unten).
+            # festschreiben. Drei Fälle werden unterschieden:
+            #  a) span nur LEICHT negativ (< 1 kWh): typisches Mess-Rauschen
+            #     beim Reconnect nach einer Verbindungsstörung, kein echter
+            #     Reset - wird auf 0 geklemmt (flache Fortsetzung) statt
+            #     die ganze Brücke zu verwerfen.
+            #  b) span DEUTLICH negativ (>= 1 kWh): für einen
+            #     total_increasing-Zähler nicht plausibel, wird blockiert.
+            #  c) span positiv, aber unrealistisch hoch (siehe unten).
+            NEGATIVE_NOISE_TOLERANCE_KWH = 1.0
             real_hourly_values = list(filled.values())
             max_real_hourly = max(real_hourly_values) if real_hourly_values else 0.0
             suspicious_threshold = max(max_real_hourly * 5, 15.0)
+
+            if -NEGATIVE_NOISE_TOLERANCE_KWH <= span < 0:
+                _LOGGER.info(
+                    "SMGW Historien-Import: aktueller Wert liegt %.3f kWh unter dem "
+                    "CSV-Endstand - im Toleranzbereich für Mess-Rauschen, Brücke "
+                    "wird flach (ohne Rückgang) fortgesetzt statt verworfen.",
+                    -span,
+                )
+                span = 0.0
+                implied_hourly_rate = 0.0
 
             if span < 0:
                 bridge_skipped_reason = (

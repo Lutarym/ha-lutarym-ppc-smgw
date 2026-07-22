@@ -1,4 +1,4 @@
-# Integrationsversion: 1.13.2
+# Integrationsversion: 1.14.0
 """Konstanten für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 # Interner, technischer Bezeichner der Integration. Wird u.a. für
@@ -32,7 +32,7 @@ HAN_PATH = "/cgi-bin/hanservice.cgi"
 # Wird im Config-Flow-Dialog und als Geräte-Softwareversion angezeigt, damit
 # man die installierte Version prüfen kann, auch bevor eine Verbindung
 # erfolgreich zustande kommt.
-VERSION = "1.13.2"
+VERSION = "1.14.0"
 
 # Service "lutarym_ppc_smgw.import_history" - einmaliger Import einer
 # korrigierten historischen Zeitreihe für den 1-0:1.8.0-Sensor
@@ -52,6 +52,13 @@ ATTR_CSV_PATH = "csv_path"
 # der Wert ist eine temporäre Upload-ID, kein Pfad; wird dort sofort in
 # einen dauerhaften csv_path (siehe oben) umgewandelt.
 ATTR_CSV_UPLOAD = "csv_upload"
+
+# Service "lutarym_ppc_smgw.repair_statistics_reset" (repair_statistics.py) -
+# korrigiert einen Statistik-Reset (sum auf 0 gefallen, state aber korrekt
+# weitergelaufen) durch exaktes Verschieben der bereits vorhandenen Werte
+# um den richtigen Offset - keine Schätzung.
+SERVICE_REPAIR_STATISTICS_RESET = "repair_statistics_reset"
+ATTR_SINCE = "since"
 
 # Schlüssel, unter dem der optionale Historien-Import-Auftrag aus dem
 # Einrichtungsassistenten (config_flow.py:async_step_history) EINMALIG in

@@ -97,7 +97,25 @@
           "description": "Wenn aktiviert, wird nur berechnet und eine Zusammenfassung (inkl. Monats-Aufschlüsselung) zurückgegeben, ohne etwas in die Statistiken zu schreiben."
         }
       }
+    },
+    "repair_statistics_reset": {
+      "name": "Statistik-Reset reparieren",
+      "description": "Korrigiert einen Statistik-Reset (sum auf 0 gefallen, state aber korrekt weitergelaufen, z.B. nach einer Verbindungsstörung) EXAKT - keine Schätzung, nur Verschiebung der bereits vorhandenen Werte ab dem angegebenen Zeitpunkt um den richtigen Offset (letzter gültiger Stand davor). Empfehlung: Recorder vorher deaktivieren, danach wieder aktivieren.",
+      "fields": {
+        "since": {
+          "name": "Ab wann",
+          "description": "Der Zeitpunkt, ab dem der Reset auftrat (z.B. die erste Stunde mit sum=0 in Entwicklerwerkzeuge → Aktionen → recorder.get_statistics)."
+        },
+        "target_entity": {
+          "name": "Ziel-Entity (optional)",
+          "description": "Der 1-0:1.8.0-Sensor, der repariert werden soll. Wird automatisch ermittelt, wenn leer gelassen - funktioniert automatisch nur, wenn genau ein Gateway konfiguriert ist."
+        },
+        "dry_run": {
+          "name": "Testlauf",
+          "description": "Wenn aktiviert, wird nur berechnet und eine Zusammenfassung zurückgegeben, ohne etwas in die Statistiken zu schreiben."
+        }
+      }
     }
   },
-  "_integration_version": "1.13.2"
+  "_integration_version": "1.14.0"
 }

@@ -1,4 +1,4 @@
-# Integrationsversion: 1.13.2
+# Integrationsversion: 1.14.0
 """DataUpdateCoordinator für das PPC Smart Meter Gateway.
 
 Ein Update-Zyklus (_async_update_data) entspricht genau einem
@@ -26,6 +26,20 @@ from .api import PPCSmgwAuthError, PPCSmgwClient, PPCSmgwConnectionError, PPCSmg
 from .const import DOMAIN, MANUFACTURER, MODEL, VERSION
 
 _LOGGER = logging.getLogger(__name__)
+
+# Anzahl aufeinanderfolgender fehlgeschlagener Update-Zyklen, die toleriert
+# werden, BEVOR die Entities tatsächlich auf "nicht verfügbar" gesetzt
+# werden (siehe _async_update_data). Wichtig für total_increasing-Sensoren
+# wie 1-0:1.8.0: wird eine Entity kurzzeitig "nicht verfügbar", scheint
+# Home Assistants eigene Langzeit-Statistik-Kompilierung das als möglichen
+# Zähler-Reset zu werten und fängt die 'sum'-Berechnung neu bei 0 an,
+# sobald die Entity wiederkehrt - beobachtet nach einem einzelnen
+# kurzzeitigen "Server disconnected"-Verbindungsfehler. Mit dieser
+# Toleranz bleibt die Entity bei EINZELNEN Aussetzern auf ihrem letzten
+# bekannten Wert verfügbar, statt die Statistik-Reihe zu gefährden - nur
+# bei WIEDERHOLTEN, aufeinanderfolgenden Fehlern (echter, anhaltender
+# Ausfall) wird sie wie bisher als nicht verfügbar markiert.
+MAX_CONSECUTIVE_FAILURES_BEFORE_UNAVAILABLE = 3
 
 # Präfix für Auswertungsprofil-Sensoren im data-dict, damit sie nicht mit
 # Zähler-Messwert-Schlüsseln kollidieren können.
@@ -95,6 +109,8 @@ class PPCSmgwCoordinator(DataUpdateCoordinator[dict[str, dict]]):
         self.tariff_labels = tariff_labels  # None = alle gefundenen Auswertungsprofile
         self.available_meters: list[dict[str, str]] = []
         self.available_tariff_profiles: list[dict[str, str]] = []
+        # Siehe MAX_CONSECUTIVE_FAILURES_BEFORE_UNAVAILABLE weiter oben.
+        self._consecutive_failures = 0
 
     async def _async_update_data(self) -> dict[str, dict]:
         token: str | None = None
@@ -195,10 +211,29 @@ class PPCSmgwCoordinator(DataUpdateCoordinator[dict[str, dict]]):
                     )
                 data[key] = value
 
+            self._consecutive_failures = 0
             return data
         except PPCSmgwAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except (PPCSmgwParsingError, PPCSmgwConnectionError) as err:
+            self._consecutive_failures += 1
+            if (
+                self._consecutive_failures < MAX_CONSECUTIVE_FAILURES_BEFORE_UNAVAILABLE
+                and self.data
+            ):
+                # Toleranz für kurze Aussetzer (siehe Konstante oben): noch
+                # nicht als "nicht verfügbar" markieren, sondern die letzten
+                # bekannten Werte beibehalten - schützt insbesondere die
+                # Langzeit-Statistik von 1-0:1.8.0 vor einem Reset auf 0
+                # durch einen einzelnen kurzzeitigen Verbindungsfehler.
+                _LOGGER.warning(
+                    "SMGW: Update-Zyklus fehlgeschlagen (%d/%d, wird toleriert - "
+                    "letzte bekannte Werte bleiben aktiv): %s",
+                    self._consecutive_failures,
+                    MAX_CONSECUTIVE_FAILURES_BEFORE_UNAVAILABLE,
+                    err,
+                )
+                return self.data
             raise UpdateFailed(str(err)) from err
         finally:
             # IMMER ausloggen, auch bei Fehlern - siehe Klassen-Docstring.
