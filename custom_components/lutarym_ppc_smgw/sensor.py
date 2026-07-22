@@ -1,4 +1,4 @@
-# Integrationsversion: 1.18.0
+# Integrationsversion: 2.0.0
 """Sensor-Plattform für die PPC Smart Meter Gateway Integration.
 
 Jedes einzelne von der API gelieferte Feld wird als EIGENE Entität
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import timedelta
 
 from homeassistant.components.recorder.models import (
     StatisticData,
@@ -42,6 +43,7 @@ from .coordinator import (
     gateway_gueltig_ab,
     gateway_obis_status,
 )
+from .history_import import _fetch_hourly_sum
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -355,25 +357,79 @@ class PPCSmgwValueSensor(CoordinatorEntity[PPCSmgwCoordinator], SensorEntity):
         Assistant selbst fälschlich veränderte 'sum' automatisch wieder,
         ohne dass eine manuelle Reparatur nötig wäre. Nur für echte
         Zähler-Messwerte (nicht Auswertungsprofile, siehe __init__).
+
+        Läuft als Task statt direkt hier: die Lücken-Prüfung (siehe
+        _async_self_publish_with_gap_fill) braucht einen async
+        Datenbank-Zugriff, _handle_coordinator_update selbst ist aber ein
+        @callback (synchron).
         """
         super()._handle_coordinator_update()
         if self._is_tariff or self._attr_state_class != SensorStateClass.TOTAL_INCREASING:
             return
-        if not self.entity_id:
-            return  # Entity noch nicht vollständig registriert
+        if not self.entity_id or not self.hass:
+            return
         value = self.native_value
         if value is None:
             return
+        self.hass.async_create_task(self._async_self_publish_with_gap_fill(value))
+
+    async def _async_self_publish_with_gap_fill(self, value: float) -> None:
+        """Schreibt den aktuellen Wert - UND füllt vorher automatisch eine
+
+        evtl. entstandene echte Lücke seit dem letzten Statistik-Punkt
+        (z.B. durch einen Home-Assistant-Neustart oder längeren Ausfall)
+        linear auf, statt sie stehen zu lassen. Deckt bis zu 3 Tage
+        rückwirkend ab - für längere Ausfälle bleibt ein manueller
+        CSV-Import (siehe travenetz_import.py) der richtige Weg, da dort
+        echte Messwerte statt einer reinen Schätzung genutzt werden.
+        """
+        now_hour = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+        stats: list[StatisticData] = []
         try:
-            self._self_publish_statistic(value)
+            lookback_start = now_hour - timedelta(days=3)
+            points = await _fetch_hourly_sum(
+                self.hass, self.entity_id, lookback_start, now_hour
+            )
+            if points:
+                last_ts, last_val = points[-1]
+                gap_slots: list = []
+                cur = last_ts + timedelta(hours=1)
+                while cur < now_hour:
+                    gap_slots.append(cur)
+                    cur += timedelta(hours=1)
+                if gap_slots:
+                    span = max(value - last_val, 0.0)  # niemals negativ interpolieren
+                    n = len(gap_slots) + 1
+                    for i, ts in enumerate(gap_slots, start=1):
+                        interpolated = round(last_val + span * (i / n), 4)
+                        stats.append(
+                            StatisticData(start=ts, state=interpolated, sum=interpolated)
+                        )
+                    _LOGGER.info(
+                        "SMGW: %d Std. Lücke bei '%s' erkannt (%s bis %s) - "
+                        "automatisch linear aufgefüllt.",
+                        len(gap_slots),
+                        self.entity_id,
+                        gap_slots[0].isoformat(),
+                        gap_slots[-1].isoformat(),
+                    )
+        except Exception:  # noqa: BLE001 - Lückenprüfung darf das normale Schreiben nicht verhindern
+            _LOGGER.exception(
+                "SMGW: Automatische Lücken-Prüfung für '%s' fehlgeschlagen - "
+                "schreibe trotzdem den aktuellen Wert.",
+                self.entity_id,
+            )
+
+        stats.append(StatisticData(start=now_hour, state=round(value, 4), sum=round(value, 4)))
+        try:
+            self._self_publish_statistic(stats)
         except Exception:  # noqa: BLE001 - darf den normalen Update-Zyklus nicht stören
             _LOGGER.exception(
                 "SMGW: Selbst-Schreiben der Statistik für '%s' fehlgeschlagen",
                 self.entity_id,
             )
 
-    def _self_publish_statistic(self, value: float) -> None:
-        now_hour = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+    def _self_publish_statistic(self, stats: list[StatisticData]) -> None:
         metadata = StatisticMetaData(
             has_mean=False,
             mean_type=StatisticMeanType.NONE,
@@ -384,7 +440,6 @@ class PPCSmgwValueSensor(CoordinatorEntity[PPCSmgwCoordinator], SensorEntity):
             unit_of_measurement=self.native_unit_of_measurement or "kWh",
             unit_class="energy",
         )
-        stats = [StatisticData(start=now_hour, state=round(value, 4), sum=round(value, 4))]
         # @callback, synchron - siehe history_import.py/travenetz_import.py
         # für die ausführliche Begründung, warum hier NICHT awaitet wird.
         async_import_statistics(self.hass, metadata, stats)

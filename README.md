@@ -1,232 +1,313 @@
-# PPC Smart Meter Gateway (iMSys) – Home Assistant Integration (by Lutarym)
+# PPC Smart Meter Gateway (iMSys) by Lutarym
 
-**Aktuelle Version: 1.10.0** – siehe [CHANGELOG.md](CHANGELOG.md) für alle
-Änderungen im Detail.
+Home-Assistant-Integration für das **PPC Smart Meter Gateway** (LTE SMGW),
+ausgelesen über die lokale **HAN-Schnittstelle**. Legt für jeden am
+Gateway gefundenen Zähler-Messwert (z.B. OBIS `1-0:1.8.0` "Bezug",
+`1-0:2.8.0` "Einspeisung") sowie für konfigurierte Auswertungsprofile
+eigene Home-Assistant-Entitäten an.
 
-Custom Component für Home Assistant zum Auslesen eines **PPC LTE Smart
-Meter Gateways** (SMGW) über dessen lokale **HAN-Schnittstelle**
-(`/cgi-bin/hanservice.cgi`), wie es bei intelligenten Messsystemen (iMSys)
-in Deutschland zum Einsatz kommt.
-
-Die Integration meldet sich per HTTP Digest Auth am Gateway an, liest
-Zählerstände ("Zählerprofil") sowie optional Auswertungsprofile aus und
-legt dafür ein eigenes **Gerät** in der Home-Assistant-Geräteverwaltung
-an – mit je einer Entität pro Messwert/Feld.
-
----
+Ab Version **1.13.0** kann zusätzlich die **historische Verbrauchsdaten**
+deines Netzbetreibers importiert werden (z.B. von TraveNetz AG), und ab
+Version **1.14.0** stehen Werkzeuge zur Reparatur fehlerhafter
+Langzeit-Statistiken direkt über Home Assistant bereit.
 
 ## Inhalt
 
-- [Features](#features)
-- [Voraussetzungen](#voraussetzungen)
 - [Installation](#installation)
 - [Einrichtung](#einrichtung)
-- [Angelegte Entitäten](#angelegte-entitäten)
-- [Bekannte Einschränkungen](#bekannte-einschränkungen)
-- [Fehlersuche / Troubleshooting](#fehlersuche--troubleshooting)
-- [Architektur (für Mitwirkende)](#architektur-für-mitwirkende)
-- [Ein Update veröffentlichen (für Repo-Betreuer)](#ein-update-veröffentlichen-für-repo-betreuer)
-- [Lizenz](#lizenz)
-
----
-
-## Features
-
-- Config Flow über die HA-Oberfläche (kein YAML nötig)
-- Erreichbarkeitsprüfung der Gateway-IP auf Port 443, **bevor** Zugangsdaten
-  abgefragt werden
-- Auswahl, welche am Gateway gefundenen Zähler als Sensoren angelegt werden
-  sollen
-- Optionaler Abruf von Auswertungsprofilen (z. B. "Bezug 15-Minuten",
-  "Bezug Monat"), inkl. automatischer Erkennung/Bevorzugung des jeweils
-  aktuellen (nicht abgelaufenen) Profils bei mehreren gleichnamigen
-  Einträgen (z. B. nach einem Lieferantenwechsel)
-- "Gateway neu starten"-Button (Selbsttest-Auslösung), falls die lokale
-  HAN-Synchronisation des Gateways einmal hängen sollte
-- Diagnose-Entitäten für Firmware, Integrationsversion, IP-Adresse,
-  Benutzername, OBIS-Aktiv-Status (1.8.0/2.8.0) und Gültigkeitsbeginn des
-  HAN-Zugangs
-- Nachträgliche Änderung der Zähler-/Auswertungsprofil-Auswahl über den
-  Options-Dialog der Integration
-- Deutsche und englische Oberfläche
-
-## Voraussetzungen
-
-- Ein PPC LTE Smart Meter Gateway mit **freigeschalteter HAN-Schnittstelle**
-  (viele Messstellenbetreiber schalten diese nicht automatisch frei -
-  ggf. explizit beim Messstellenbetreiber (MSB) beantragen)
-- **Aktuelle** HAN-Zugangsdaten (Benutzername + Passwort) von deinem
-  Messstellenbetreiber - siehe unbedingt den Hinweis zu veralteten
-  Zugangsdaten unter [Fehlersuche](#fehlersuche--troubleshooting)
-- Dein Home-Assistant-Host muss das Gateway im Netzwerk erreichen können
-  (das Gateway hat oft eine feste IP ohne DHCP im eigenen Subnetz - ggf.
-  muss dein HA-Host eine zweite, statische IP in diesem Subnetz bekommen).
-  Bei **TraveNetz AG** werden die iMSys-Gateways z. B. unter der festen
-  IP `172.20.0.1` angesprochen (abweichend vom Gateway-Standardwert
-  `192.168.1.200`) - bei anderen Messstellenbetreibern kann die Adresse
-  abweichen.
+- [Historische Daten importieren (CSV-Import)](#historische-daten-importieren-csv-import)
+- [Statistik-Reparatur über Entwicklerwerkzeuge](#statistik-reparatur-über-entwicklerwerkzeuge)
+- [Automatische Selbstheilung](#automatische-selbstheilung)
+- [Service-Referenz](#service-referenz)
+- [Fehlerbehebung](#fehlerbehebung)
 
 ## Installation
 
-### Über HACS (empfohlen)
+### Über HACS
 
-1. HACS → Menü (⋮) → **Benutzerdefinierte Repositories**
-2. Dieses Repository (`https://github.com/Lutarym/ha-lutarym-ppc-smgw`)
-   als **Integration** hinzufügen
+1. HACS → Integrationen → **⋮** → Benutzerdefinierte Repositories
+2. URL dieses Repositories eintragen, Kategorie **Integration**
 3. "PPC Smart Meter Gateway (iMSys) by Lutarym" installieren
-4. Home Assistant neu starten
+4. Home Assistant **komplett neu starten**
 
 ### Manuell
 
-1. Den Ordner `custom_components/lutarym_ppc_smgw/` in deinen
-   `custom_components`-Ordner kopieren
-2. Home Assistant neu starten
+Den kompletten Inhalt von `custom_components/lutarym_ppc_smgw/` in dein
+`config/custom_components/lutarym_ppc_smgw/`-Verzeichnis kopieren,
+danach Home Assistant neu starten.
 
 ## Einrichtung
 
-**Einstellungen → Geräte & Dienste → Integration hinzufügen** → nach
-"PPC Smart Meter Gateway" oder "iMSys" suchen.
+Einstellungen → Geräte & Dienste → Integration hinzufügen → "PPC Smart
+Meter Gateway" suchen. Der Assistent führt durch:
 
-1. IP-Adresse/Hostname des Gateways eingeben (wird auf Port 443 geprüft,
-   bevor es weitergeht)
-2. HAN-Benutzername + Passwort eingeben (reiner Digest-Auth-Login-Test,
-   noch kein Zähler-Abruf - ein Fehler hier bedeutet wirklich falsche
-   Zugangsdaten oder ein nicht erreichbares Gateway)
-3. Zähler auswählen, die als Sensoren angelegt werden sollen
-4. Optional: Auswertungsprofile auswählen (falls am Gateway vorhanden)
+1. **Host/IP-Adresse** des Gateways (wird auf Erreichbarkeit über Port
+   443 geprüft)
+2. **HAN-Zugangsdaten** (von deinem Messstellenbetreiber erhalten)
+3. **Zähler auswählen**, die als Sensoren angelegt werden sollen
+4. **Auswertungsprofile auswählen** (optional, z.B. "Bezug 15-Minuten")
+5. **Historische Daten importieren** (optional, siehe nächster Abschnitt)
 
-Zähler-/Auswertungsprofil-Auswahl lässt sich später jederzeit über
-**Einstellungen → Geräte & Dienste → PPC Smart Meter Gateway →
-Konfigurieren** ändern (Benutzername/Passwort dort NICHT änderbar -
-dafür Integration löschen und neu einrichten).
+## Historische Daten importieren (CSV-Import)
 
-## Angelegte Entitäten
+Da das Gateway erst ab dem Zeitpunkt der Ersteinrichtung Daten
+aufzeichnet, bleibt die Home-Assistant-Statistik ohne Import auf diesen
+Zeitraum beschränkt. Über einen **1:1-CSV-Import** lässt sich die
+komplette Historie seit Zähler-Einbau nachtragen — mit den **echten**
+Messwerten deines Netzbetreibers, ohne Schätzung oder Skalierung.
 
-Pro ausgewähltem Zähler:
+### CSV von deinem Netzbetreiber besorgen
 
-- **Werte-Sensor** je gefundenem OBIS-Code (z. B. `1.8.0`, `2.8.0`) mit
-  dem eigentlichen Zählerstand
-- Diagnose-Felder dazu: Zähler-ID, Name, Beschreibung, Kommunikationstyp,
-  Protokoll-Typ/-Version, Ausleseintervall, Abfrageversuche,
-  Zähleradresse, Medium, Zeitstempel, Ist valide, Signiert
-  (eichrechtskonformer Ablesewert)
+Bei TraveNetz AG (und vermutlich bei weiteren Netzbetreibern mit
+ähnlichem Kundenportal): im Online-Kundenportal die **stündlichen**
+Verbrauchswerte für OBIS `1-0:1.8.0` ("Energie bezogen") als CSV
+exportieren, für den gewünschten Zeitraum (idealerweise ab Zähler-Einbau
+bis heute).
 
-Pro ausgewähltem Auswertungsprofil:
+### Erwartetes CSV-Format
 
-- Platzhalter-Entität (zeigt "unbekannt" - Auswertungsprofile liefern
-  keinen eigenen Messwert, nur Konfigurationsdaten)
-- Diagnose-Felder: Profil-ID, TAF-Typ, OBIS, Messgröße, Register-/
-  Abrechnungsperiode, Vorhaltezeit, Beginn/Ende Gültigkeit, Abgelaufen,
-  Alias, Zählpunkt, Tarifstufen, Tag Beginn
+Die Integration erwartet **exakt** das Exportformat des TraveNetz-
+Kundenportals:
 
-Einmal pro Gerät:
+- **Kodierung**: UTF-8 (mit oder ohne BOM)
+- **Trennzeichen**: Semikolon (`;`)
+- **Dezimaltrennzeichen**: Komma (deutsches Format, z.B. `4,289460`)
+- **Erste zwei Zeilen**: Kopfzeilen, werden automatisch übersprungen
+- **Ab Zeile 3**: eine Datenzeile pro Stunde, Spalten:
 
-- **Gateway neu starten** (Button)
-- Firmware, Integrations-Version, IP-Adresse, Benutzername,
-  1.8.0 Aktiv, 2.8.0 Aktiv, Zugang gültig ab (Diagnose-Sensoren)
+  | Spalte | Beispielinhalt | Bedeutung |
+  |---|---|---|
+  | 1 | `27.11.2025 - 00:00:00` | Beginn der Stunde, **deutsche Lokalzeit** (`DD.MM.YYYY - HH:MM:SS`) |
+  | 2 | `27.11.2025 - 01:00:00` | Ende der Stunde (wird nicht ausgewertet) |
+  | 3 | `0,489460` | Messwert dieser Stunde (Komma-Dezimal) |
+  | 4 | `kW` | Einheit lt. Export - wird trotz Beschriftung als **kWh dieser Stunde** interpretiert (bei 1-Stunden-Intervallen numerisch identisch) |
+  | 5 | `W` | Status (`W` = valide, `-` als Wert = fehlende Messung) |
 
-## Bekannte Einschränkungen
+  Beispielzeile:
+  ```
+  "27.11.2025 - 00:00:00";"27.11.2025 - 01:00:00";"0,489460";"kW";"W";
+  ```
 
-- Das SMGW liefert i. d. R. nur alle 15 Minuten einen neuen Messwert –
-  kein Echtzeitwert. Das Standard-Poll-Intervall der Integration beträgt
-  daher ebenfalls 15 Minuten (900 Sekunden).
-- Das Gateway erlaubt laut Beobachtung **nur eine aktive Session
-  gleichzeitig**. Läuft parallel eine andere Integration/App mit
-  denselben Zugangsdaten gegen dasselbe Gateway, kann es zu vereinzelten
-  Verbindungsfehlern kommen.
-- Getestet gegen die per HAN-Schnittstelle beobachtete Formular-Logik
-  dieses PPC-Gateway-Modells. Bei abweichender Firmware kann sich das
-  HTML-Layout unterscheiden – bitte in diesem Fall ein Issue mit der
-  Fehlermeldung öffnen.
-- Nicht jeder Zähler/Zählpunkt liefert über HAN beide Register (1.8.0
-  Bezug UND 2.8.0 Einspeisung) - manche Messstellenbetreiber schalten
-  standardmäßig nur eines davon frei. Fehlt eine Entität, beim MSB
-  nachfragen, ob das jeweils andere Register im HAN-Ausgabeprofil
-  aktiviert werden kann.
+- **Fehlende Stunden**: Zeilen mit `-` statt einem Zahlenwert (Status
+  meist `F`) werden als Lücke erkannt. Einzelne fehlende Stunden
+  **innerhalb** des Datenbereichs werden automatisch linear zwischen den
+  beiden benachbarten echten Werten aufgefüllt. Am Anfang/Ende
+  fehlende Stunden (vor der ersten bzw. nach der letzten echten Messung)
+  werden **nicht** erfunden.
+- **Zeitumstellung**: wird korrekt berücksichtigt (Europe/Berlin,
+  inklusive Sommer-/Winterzeit-Wechsel).
 
-## Fehlersuche / Troubleshooting
+Andere CSV-Formate (z.B. mit Komma statt Semikolon als Trennzeichen,
+englischem Zahlenformat oder anderer Spaltenreihenfolge) werden
+**nicht** unterstützt und führen zu einer Fehlermeldung beim Import.
 
-### Zählerstand wirkt "eingefroren" (ändert sich nie)
+### Import beim Einrichten
 
-Die häufigste tatsächliche Ursache dafür ist überraschend: **veraltete
-HAN-Zugangsdaten.** Nach einem Lieferanten- oder
-Messstellenbetreiberwechsel vergibt der MSB oft neue HAN-Zugangsdaten -
-der Login mit den **alten** Zugangsdaten funktioniert dabei oft weiterhin
-fehlerfrei (kein 401, keine Fehlermeldung!), liefert aber dauerhaft nur
-den letzten Stand zum Zeitpunkt des Wechsels, nicht mehr aktuelle Werte.
+Im letzten Schritt des Einrichtungsassistenten ("Historische Daten
+importieren"):
 
-Prüfen:
-1. Im Kundenportal deines Messstellenbetreibers nachsehen, welcher
-   HAN-Benutzername dort **aktuell** als gültig hinterlegt ist.
-2. Mit dem in der Integration hinterlegten Benutzernamen vergleichen
-   (siehe Diagnose-Entität "Benutzername" am Gerät).
-3. Bei Abweichung: Integration löschen und mit den aktuellen
-   Zugangsdaten neu einrichten.
+- **CSV-Datei-Upload**: die exportierte Datei per Datei-Auswahl
+  hochladen
+- **Wert an der ersten Zeile (kWh)**: der Zählerstand, der am
+  allerersten Zeitpunkt der CSV galt.
+  - Startet die CSV genau am Tag des Zähler-Einbaus → **0** eintragen
+    (oder leer lassen, Standardwert ist 0)
+  - Deckt die CSV nur einen Teil-Zeitraum ab (z.B. weil der Zähler
+    schon vorher existierte) → den tatsächlichen Zählerstand zum
+    CSV-Startzeitpunkt eintragen
 
-### "Gateway neu starten"-Button
+Beide Felder sind optional - bleibt der Datei-Upload leer, wird kein
+Import durchgeführt, die Integration wird ganz normal ohne historische
+Daten eingerichtet.
 
-Falls "Zugang gültig ab" / Zeitstempel sich über einen längeren Zeitraum
-gar nicht mehr bewegen, obwohl die Zugangsdaten nachweislich aktuell
-sind: Den "Gateway neu starten"-Button drücken. Das löst einen
-Selbsttest/Neustart der lokalen HAN-Schnittstelle des Gateways aus (nicht
-des Zählers oder der Backend-Anbindung beim Netzbetreiber) und kann eine
-hängende Synchronisation wieder in Gang bringen.
+Der Import läuft automatisch **nach** dem Abschluss der Einrichtung
+(sobald die Entities existieren) und meldet das Ergebnis als
+Benachrichtigung in Home Assistant.
 
-### Login schlägt fehl ("Anmeldung fehlgeschlagen" trotz HTTP 200)
+### Import nachträglich (bestehende Installation)
 
-- Zugangsdaten nochmal exakt per Copy-Paste (nicht abtippen) aus dem
-  Passwort-Manager/Kundenportal übernehmen - Tippfehler bei diesen langen
-  Benutzernamen/Passwörtern sind die häufigste Ursache.
-- Prüfen, ob parallel eine andere Integration/App mit denselben
-  Zugangsdaten aktiv gegen dasselbe Gateway pollt (nur eine Session
-  gleichzeitig erlaubt) - testweise deaktivieren und 1-2 Minuten warten.
+Ohne die Integration neu einrichten zu müssen, über **Entwicklerwerkzeuge
+→ Aktionen** den Service `lutarym_ppc_smgw.import_history` aufrufen:
 
-### 2.8.0 (Einspeisung) fehlt, obwohl PV/Batterie vorhanden
+```yaml
+action: lutarym_ppc_smgw.import_history
+data:
+  csv_path: /config/imsys_export.csv
+  start_value: 0
+```
 
-Siehe [Bekannte Einschränkungen](#bekannte-einschränkungen) - das ist in
-der Regel eine Freischaltungsfrage beim Messstellenbetreiber, keine
-Fehlkonfiguration der Integration.
+Die CSV-Datei muss dafür vorher auf den Home-Assistant-Host gelegt
+werden, z.B. über den File-Editor-Add-on direkt nach `/config/` (der
+Pfad im Beispiel geht davon aus, dass die Datei dort unter dem Namen
+`imsys_export.csv` liegt - Namen entsprechend anpassen).
 
-## Architektur (für Mitwirkende)
+`target_entity` kann weggelassen werden, wenn genau ein Gateway
+konfiguriert ist (wird dann automatisch gefunden) - bei mehreren
+Gateways muss die Ziel-Entity explizit angegeben werden, z.B.
+`sensor.ppc_smgw_1_8_0`.
 
-- HTTP-Client: `httpx.AsyncClient` (über Home Assistants
-  `create_async_httpx_client`-Hilfsfunktion), NICHT `aiohttp`. Wichtig:
-  Digest-Auth (`httpx.DigestAuth`) wird bei **jedem einzelnen Request**
-  neu durchlaufen, nicht nur beim initialen Login - siehe Docstring in
-  `api.py` für den Hintergrund dieser Entscheidung.
-- HTML-Parsing: reine Regex-Extraktion (kein `BeautifulSoup`/zusätzliche
-  Abhängigkeit), da das Gateway teils fehlerhaftes/nicht-striktes HTML
-  liefert.
-- `coordinator.py`: `DataUpdateCoordinator`, ein Update-Zyklus = ein
-  vollständiger Login → Abfrage(n) → Logout-Durchlauf.
-- `build_device_info()` zentral in `coordinator.py`, um Geräte-Info
-  konsistent über `sensor.py` und `button.py` hinweg bereitzustellen.
+Ein erneuter Aufruf **überschreibt** einen vorherigen Import vollständig
+(für den abgedeckten Zeitraum) - nützlich, um z.B. eine aktuellere
+CSV-Datei mit mehr Tagen einzuspielen.
 
-- `brand/icon.png` (256×256) und `brand/icon@2x.png` (512×512) - eigenes
-  Integrations-Icon, seit Home Assistant 2026.3 direkt im Integrations-
-  ordner unterstützt (kein Pull Request an ein externes Repository mehr
-  nötig). Bei älteren HA-Versionen wird einfach kein Icon angezeigt.
+**Empfehlung vor größeren Importen**: kurz den Recorder pausieren
+(Entwicklerwerkzeuge → Aktionen → `Recorder: Deaktivieren`), nach dem
+Import wieder aktivieren (`Recorder: Aktivieren`) - nicht zwingend
+nötig, aber sicherer bei sehr großen Datenmengen.
 
-## Ein Update veröffentlichen (für Repo-Betreuer)
+## Statistik-Reparatur über Entwicklerwerkzeuge
 
-Damit HACS ein neues Update erkennt, reicht das Hochladen der Dateien auf
-GitHub allein **nicht** aus - HACS orientiert sich an **GitHub Releases**,
-nicht am neuesten Commit. Bei jeder neuen Version:
+Home Assistants interne Langzeit-Statistik-Kompilierung kann in seltenen
+Fällen ihren Bezugspunkt verlieren (z.B. nach einer Verbindungsstörung
+zum Gateway) - sichtbar als plötzlicher Sprung auf 0, eine unrealistisch
+hohe Rampe, oder sogar negative Werte in der Statistik, **obwohl** der
+angezeigte Live-Wert der Entity die ganze Zeit korrekt war. Zwei Services
+helfen, das gezielt zu reparieren, **ohne** einen kompletten Neu-Import.
 
-1. Geänderte Dateien auf GitHub aktualisieren (z. B. per GitHub Desktop:
-   committen & pushen).
-2. **Wichtig:** `hacs.json` im Hauptverzeichnis hat ein **eigenes**
-   `"name"`-Feld, unabhängig von `custom_components/lutarym_ppc_smgw/
-   manifest.json` - bei Namensänderungen beide Dateien aktualisieren.
-3. Auf GitHub einen neuen **Release** anlegen (Releases → Create a new
-   release), Tag passend zur **aktuellen** Version in `manifest.json`
-   (z. B. bei `"version": "1.2.3"` den Tag `v1.2.3`).
-4. In HACS bei der Integration: ⋮ → **Redownload**, danach Home Assistant
-   neu starten.
+> **Seit Version 1.18.0** schreibt die Integration ihre Statistik-Werte
+> selbst direkt (statt sich auf Home Assistants automatische Ableitung zu
+> verlassen) - dieses Problem sollte dadurch deutlich seltener auftreten.
+> Seit Version 1.19.0 werden kurze Lücken (bis zu 3 Tage, z.B. durch
+> einen Home-Assistant-Neustart) zusätzlich automatisch aufgefüllt. Die
+> folgenden Services bleiben trotzdem verfügbar, für den Fall, dass doch
+> mal etwas repariert werden muss oder für Zeiträume vor Version 1.18.0.
+
+### Schritt 1: Problem erkennen
+
+Entwicklerwerkzeuge → Aktionen → `recorder.get_statistics` (YAML-Modus),
+um die stündlichen Werte um den vermuteten Zeitpunkt herum zu prüfen:
+
+```yaml
+action: recorder.get_statistics
+data:
+  statistic_ids:
+    - sensor.ppc_smgw_1_8_0
+  start_time: "2026-07-20 00:00:00"
+  end_time: "2026-07-23 00:00:00"
+  period: hour
+  types:
+    - sum
+    - state
+response_variable: result
+```
+
+Nach dem Ausführen erscheint das Ergebnis im "Antwort"-Bereich unten im
+Fenster. Zwei Muster sind zu unterscheiden:
+
+**Muster A - Reset auf 0 (oder allgemein: Wert zu niedrig)**: `sum`
+fällt an einer Stelle plötzlich stark ab (z.B. auf 0) und zählt von dort
+an mit realistisch kleinen Schritten weiter, während `state` unauffällig
+bleibt.
+
+**Muster B - fälschliche Rampe (Wert zu hoch)**: `sum`/`state` steigen
+über mehrere Stunden mit demselben, unrealistisch großen Betrag pro
+Stunde an, bis ein deutlich zu hohes Plateau erreicht wird, danach laufen
+die Werte wieder normal weiter.
+
+### Schritt 2a: Muster A reparieren
+
+```yaml
+action: lutarym_ppc_smgw.repair_statistics_reset
+data:
+  target_entity: sensor.ppc_smgw_1_8_0
+  since: "2026-07-21 09:00:00"
+```
+
+`since` = der Zeitpunkt der **ersten** auffällig niedrigen Stunde. Der
+Service ermittelt automatisch den letzten gültigen Wert davor, füllt eine
+etwaige echte Zeitlücke davor linear auf, und verschiebt alle bereits
+vorhandenen Punkte ab `since` um den korrekten Offset nach oben.
+
+### Schritt 2b: Muster B reparieren
+
+```yaml
+action: lutarym_ppc_smgw.repair_erroneous_ramp
+data:
+  target_entity: sensor.ppc_smgw_1_8_0
+  ramp_start: "2026-07-20 22:00:00"
+  ramp_end: "2026-07-21 10:00:00"
+```
+
+`ramp_start` = letzte normale Stunde **vor** dem Anstieg + 1 Stunde (also
+die erste auffällige Stunde). `ramp_end` = erste Stunde, in der die
+Werte wieder normal (kleine, plausible Schritte) weiterlaufen. Der
+Rampen-Zeitraum wird flach aufgefüllt, alle Werte ab `ramp_end` werden
+um den ermittelten Überschuss nach unten korrigiert.
+
+### Vor der Reparatur: Recorder pausieren
+
+Für beide Services empfohlen, damit während der Korrektur kein neuer,
+live geschriebener Punkt dazwischenfunkt:
+
+1. Entwicklerwerkzeuge → Aktionen → `Recorder: Deaktivieren` ausführen
+2. Reparatur-Service ausführen
+3. Entwicklerwerkzeuge → Aktionen → `Recorder: Aktivieren` ausführen
+
+### Ergebnis prüfen
+
+Beide Services zeigen als Antwort eine Zusammenfassung (Anzahl
+korrigierter Punkte, ermittelter Offset/Überschuss, Wert vor/nach der
+Reparatur) - zusätzlich lässt sich mit der `recorder.get_statistics`-
+Abfrage von Schritt 1 gegenprüfen, ob der Verlauf jetzt lückenlos und
+plausibel ist.
+
+Mit `dry_run: true` lässt sich jeder der beiden Services testweise
+ausführen, ohne dass etwas geschrieben wird - zeigt nur, was passieren
+würde.
+
+## Automatische Selbstheilung
+
+Ab Version 1.18.0/1.19.0 arbeitet die Integration proaktiv gegen die im
+vorigen Abschnitt beschriebenen Anomalien:
+
+- **Selbst-Schreiben** (1.18.0): bei jedem Auslesezyklus (Standard: alle
+  15 Minuten) schreibt jeder Zähler-Sensor (`state_class:
+  total_increasing`) seinen aktuellen Wert direkt als Statistik-Punkt,
+  statt sich auf Home Assistants automatische Ableitung von `sum` aus
+  `state` zu verlassen.
+- **Automatische Lückenfüllung** (1.19.0): erkennt bei jedem Zyklus, ob
+  seit dem letzten Statistik-Punkt eine echte Lücke entstanden ist (z.B.
+  durch einen Home-Assistant-Neustart), und füllt sie automatisch linear
+  auf - deckt bis zu 3 Tage rückwirkend ab. Für längere Ausfälle bleibt
+  ein CSV-Import (siehe oben) der genauere Weg, da er echte Messwerte
+  statt einer Schätzung nutzt.
+
+## Service-Referenz
+
+| Service | Zweck | Pflichtfelder |
+|---|---|---|
+| `lutarym_ppc_smgw.import_history` | Historische CSV-Daten importieren (oder ältere skalierte Quell-Entity-Variante, siehe Quellcode-Kommentare) | `csv_path` |
+| `lutarym_ppc_smgw.repair_statistics_reset` | Reset-auf-0-Fehler in bestehender Statistik reparieren | `since` |
+| `lutarym_ppc_smgw.repair_erroneous_ramp` | Fälschliche Rampe in bestehender Statistik reparieren | `ramp_start`, `ramp_end` |
+
+Alle drei Services unterstützen `target_entity` (optional, wird bei genau
+einem Gateway automatisch ermittelt) und `dry_run` (optional, Standard
+`false`) - vollständige Feldbeschreibungen erscheinen direkt im
+Home-Assistant-Formular unter Entwicklerwerkzeuge → Aktionen.
+
+## Fehlerbehebung
+
+**CSV-Import schlägt fehl / "keine verwertbaren Datenzeilen"**: Format
+prüfen (siehe [oben](#erwartetes-csv-format)) - andere Netzbetreiber-
+Portale können ein abweichendes Exportformat verwenden, das nicht
+unterstützt wird.
+
+**Nach der Einrichtung mehrere Entities mit ähnlichem Namen** (z.B.
+`sensor.ppc_smgw_..._1_8_0` und eine umbenannte Variante): kann bei
+mehrfacher Neu-Einrichtung des Geräts entstehen. Über
+Entwicklerwerkzeuge → Statistiken prüfen, welche Entity aktuell noch
+lebendig ist (Wert ändert sich bei jedem Neuladen), und veraltete
+Karteileichen bei Bedarf über die "Probleme beheben"-Funktion der
+Statistik-Übersicht entfernen.
+
+**Verbindungsfehler ("Server disconnected") im Protokoll**: einzelne,
+seltene Aussetzer werden ab Version 1.13.3 toleriert (Entity bleibt bis
+zu 3 aufeinanderfolgende fehlgeschlagene Zyklen auf dem letzten bekannten
+Wert verfügbar, statt sofort "nicht verfügbar" zu werden). Bei
+anhaltenden Verbindungsproblemen: Netzwerkverbindung zum Gateway prüfen,
+ggf. über den "Gateway neu starten"-Button der Integration einen
+Neustart des Gateways auslösen.
 
 ## Lizenz
 
-Kein Open-Source-Lizenz im klassischen Sinn - Nutzung/Installation über
-HACS oder manuell ist ausdrücklich erlaubt, Kopieren, Verändern oder
-Weiterverbreiten des Quellcodes NICHT. Siehe [LICENSE](LICENSE) für den
-vollständigen Text.
+Private / persönliche Nutzung.
