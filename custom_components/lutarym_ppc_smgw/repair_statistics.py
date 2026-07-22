@@ -1,4 +1,4 @@
-# Integrationsversion: 1.14.0
+# Integrationsversion: 1.14.1
 """Repariert einen Statistik-Reset (sum auf 0 gefallen, state aber
 
 korrekt weitergelaufen) OHNE zu raten oder zu interpolieren.

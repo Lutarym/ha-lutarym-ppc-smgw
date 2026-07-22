@@ -1,4 +1,4 @@
-# Integrationsversion: 1.14.0
+# Integrationsversion: 1.14.1
 """PPC Smart Meter Gateway (iMSys) Integration für Home Assistant.
 
 Einstiegspunkt der Integration (von Home Assistant automatisch anhand des
@@ -88,17 +88,32 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     domain-weiten Service EINMAL zu registrieren (nicht pro Entry, das
     würde bei mehreren Gateways zu einem Registrierungs-Konflikt führen).
     """
+
+    # WICHTIG: echte "async def"-Wrapper statt lambda! Eine lambda, die
+    # einen async-Aufruf zurückgibt (lambda call: _async_handle(...)),
+    # ist selbst KEINE Coroutine-Funktion (asyncio.iscoroutinefunction
+    # liefert False dafür) - Home Assistants Service-Aufruf-Mechanismus
+    # erkennt sie dann fälschlich als synchronen Handler, ruft sie auf und
+    # bekommt ein rohes, nie awaitetes Coroutine-Objekt zurück statt des
+    # tatsächlichen Ergebnis-Dicts. Symptom: "Es wurde ein Dictionary
+    # erwartet, aber es wurde <class 'coroutine'> erhalten."
+    async def _handle_import_history(call: ServiceCall) -> ServiceResponse:
+        return await _async_handle_import_history(hass, call)
+
+    async def _handle_repair_statistics_reset(call: ServiceCall) -> ServiceResponse:
+        return await _async_handle_repair_statistics_reset(hass, call)
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_IMPORT_HISTORY,
-        lambda call: _async_handle_import_history(hass, call),
+        _handle_import_history,
         schema=IMPORT_HISTORY_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
         DOMAIN,
         SERVICE_REPAIR_STATISTICS_RESET,
-        lambda call: _async_handle_repair_statistics_reset(hass, call),
+        _handle_repair_statistics_reset,
         schema=REPAIR_STATISTICS_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
