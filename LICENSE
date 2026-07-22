@@ -1,49 +1,21 @@
+MIT License
+
 Copyright (c) 2026 Lutarym
-Alle Rechte vorbehalten. / All rights reserved.
 
-Es wird jeder Person die Erlaubnis erteilt, diese Software unverändert
-zu installieren, zu nutzen und zu betreiben - als Custom Integration
-für die eigene Home-Assistant-Instanz, einschließlich der Installation
-über den Home Assistant Community Store (HACS) unter Verwendung dieses
-Repositories als Bezugsquelle.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-Darüber hinaus wird KEINE Erlaubnis erteilt, diese Software oder Teile
-ihres Quellcodes zu kopieren, zu vervielfältigen, weiterzuverbreiten,
-zu veröffentlichen, unterzulizenzieren, zu verkaufen, zu verändern oder
-davon abgeleitete Werke zu erstellen, ohne vorherige schriftliche
-Zustimmung des Rechteinhabers.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-DIE SOFTWARE WIRD OHNE MÄNGELGEWÄHR ("AS IS") BEREITGESTELLT, OHNE
-JEGLICHE AUSDRÜCKLICHE ODER STILLSCHWEIGENDE GEWÄHRLEISTUNG,
-EINSCHLIESSLICH, ABER NICHT BESCHRÄNKT AUF DIE GEWÄHRLEISTUNG DER
-MARKTGÄNGIGKEIT, DER EIGNUNG FÜR EINEN BESTIMMTEN ZWECK UND DER
-NICHTVERLETZUNG VON RECHTEN DRITTER. IN KEINEM FALL HAFTET DER AUTOR
-ODER RECHTEINHABER FÜR ANSPRÜCHE, SCHÄDEN ODER SONSTIGE HAFTUNG, OB AUS
-VERTRAG, UNERLAUBTER HANDLUNG ODER ANDERWEITIG, DIE SICH AUS ODER IM
-ZUSAMMENHANG MIT DER SOFTWARE ODER DEREN NUTZUNG ERGEBEN.
-
----
-
-English (informal translation, the German text above is authoritative):
-
-Permission is granted to any person to install, use, and run this
-software, unmodified, as a Home Assistant custom integration on their
-own Home Assistant instance, including installation via the Home
-Assistant Community Store (HACS) using this repository as the
-distribution source.
-
-Except as expressly permitted above, NO permission is granted to copy,
-reproduce, redistribute, publish, sublicense, sell, modify, or create
-derivative works based on this software or any part of its source
-code, in whole or in part, without prior written permission from the
-copyright holder.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR OR COPYRIGHT HOLDER BE
-LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-# Integrationsversion: 1.10.0
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
