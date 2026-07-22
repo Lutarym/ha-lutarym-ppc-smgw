@@ -1,4 +1,4 @@
-# Integrationsversion: 1.17.0
+# Integrationsversion: 1.18.0
 """Repariert einen Statistik-Reset (sum auf 0 gefallen, state aber
 
 korrekt weitergelaufen) UND füllt eine davorliegende echte Lücke

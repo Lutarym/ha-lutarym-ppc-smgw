@@ -1,4 +1,4 @@
-# Integrationsversion: 1.17.0
+# Integrationsversion: 1.18.0
 """Sensor-Plattform für die PPC Smart Meter Gateway Integration.
 
 Jedes einzelne von der API gelieferte Feld wird als EIGENE Entität
@@ -11,8 +11,15 @@ erkennbaren Namensbestandteilen (Auswertungsprofil).
 
 from __future__ import annotations
 
+import logging
 import re
 
+from homeassistant.components.recorder.models import (
+    StatisticData,
+    StatisticMeanType,
+    StatisticMetaData,
+)
+from homeassistant.components.recorder.statistics import async_import_statistics
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -20,10 +27,11 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_USERNAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, VERSION
 from .coordinator import (
@@ -34,6 +42,8 @@ from .coordinator import (
     gateway_gueltig_ab,
     gateway_obis_status,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 # Bekannte Namensbestandteile in PPC-Auswertungsprofilnamen (z.B.
 # "IM4G_TAF07_BEZUG_15MI_PROD_01"), die zu einem kurzen, lesbaren Label
@@ -326,6 +336,58 @@ class PPCSmgwValueSensor(CoordinatorEntity[PPCSmgwCoordinator], SensorEntity):
     def native_unit_of_measurement(self) -> str | None:
         data = self.coordinator.data.get(self._key)
         return data.get("unit") if data else None
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Bei jedem Coordinator-Update (siehe CoordinatorEntity) zusätzlich
+
+        den aktuellen Wert DIREKT als Statistik-Punkt schreiben, statt sich
+        auf Home Assistants automatische state_class-basierte Kompilierung
+        von 'sum' aus 'state' zu verlassen. Grund: wiederholt beobachtet,
+        dass diese interne Kompilierung ihren Bezugspunkt verliert und
+        'sum' auf 0 zurückfällt, OBWOHL 'state' durchgehend korrekt bleibt
+        (state und sum sind bei total_increasing-Sensoren normalerweise
+        identisch, siehe unsere eigenen Statistik-Importe an anderer
+        Stelle in dieser Integration). Da wir hier die einzige QUELLE des
+        Wertes sind, ist state=sum=aktueller Wert immer korrekt (kein
+        Zähler-Reset-Fall zu berücksichtigen). Jeder Zyklus überschreibt
+        die aktuelle Stunde erneut - das korrigiert eine evtl. durch Home
+        Assistant selbst fälschlich veränderte 'sum' automatisch wieder,
+        ohne dass eine manuelle Reparatur nötig wäre. Nur für echte
+        Zähler-Messwerte (nicht Auswertungsprofile, siehe __init__).
+        """
+        super()._handle_coordinator_update()
+        if self._is_tariff or self._attr_state_class != SensorStateClass.TOTAL_INCREASING:
+            return
+        if not self.entity_id:
+            return  # Entity noch nicht vollständig registriert
+        value = self.native_value
+        if value is None:
+            return
+        try:
+            self._self_publish_statistic(value)
+        except Exception:  # noqa: BLE001 - darf den normalen Update-Zyklus nicht stören
+            _LOGGER.exception(
+                "SMGW: Selbst-Schreiben der Statistik für '%s' fehlgeschlagen",
+                self.entity_id,
+            )
+
+    def _self_publish_statistic(self, value: float) -> None:
+        now_hour = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+        metadata = StatisticMetaData(
+            has_mean=False,
+            mean_type=StatisticMeanType.NONE,
+            has_sum=True,
+            name=self._attr_name or self.entity_id,
+            source="recorder",
+            statistic_id=self.entity_id,
+            unit_of_measurement=self.native_unit_of_measurement or "kWh",
+            unit_class="energy",
+        )
+        stats = [StatisticData(start=now_hour, state=round(value, 4), sum=round(value, 4))]
+        # @callback, synchron - siehe history_import.py/travenetz_import.py
+        # für die ausführliche Begründung, warum hier NICHT awaitet wird.
+        async_import_statistics(self.hass, metadata, stats)
 
 
 class PPCSmgwFieldSensor(CoordinatorEntity[PPCSmgwCoordinator], SensorEntity):
