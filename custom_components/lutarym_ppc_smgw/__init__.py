@@ -92,6 +92,13 @@ REPAIR_RAMP_SCHEMA = vol.Schema(
     }
 )
 
+# Diese Integration unterstützt KEINE Konfiguration über configuration.yaml
+# (nur über den Einrichtungsassistenten/Config Entries) - async_setup wird
+# unten trotzdem implementiert, aber nur um domain-weite Services zu
+# registrieren. hassfest verlangt in diesem Fall trotzdem ein explizites
+# CONFIG_SCHEMA, das klarstellt, dass keine YAML-Konfiguration erwartet wird.
+CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
+
 
 async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     """Läuft genau EINMAL beim Start, unabhängig davon wie viele Gateways

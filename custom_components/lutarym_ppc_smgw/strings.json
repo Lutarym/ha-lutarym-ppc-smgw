@@ -90,7 +90,7 @@
         },
         "monthly_kwh": {
           "name": "Known monthly values (scaled mode only, optional)",
-          "description": "Map of \"YYYY-MM\": kWh for months where the exact consumption is already known - takes priority over the source entity's estimate for that month. Example: {\"2026-01\": 130.5, \"2026-03\": 95}"
+          "description": "Map of \"YYYY-MM\" to kWh for months where the exact consumption is already known - takes priority over the source entity's estimate for that month. Example: 2026-01 = 130.5, 2026-03 = 95"
         },
         "dry_run": {
           "name": "Dry run",

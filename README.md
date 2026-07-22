@@ -310,4 +310,4 @@ Neustart des Gateways auslösen.
 
 ## Lizenz
 
-Private / persönliche Nutzung.
+[MIT](LICENSE)

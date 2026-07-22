@@ -90,7 +90,7 @@
         },
         "monthly_kwh": {
           "name": "Bekannte Monatswerte (nur skalierter Modus, optional)",
-          "description": "Zuordnung \"JJJJ-MM\": kWh für Monate, deren genauer Verbrauch schon bekannt ist - hat für diesen Monat Vorrang vor der Schätzung aus der Quell-Entity. Beispiel: {\"2026-01\": 130.5, \"2026-03\": 95}"
+          "description": "Zuordnung von \"JJJJ-MM\" zu kWh für Monate, deren genauer Verbrauch schon bekannt ist - hat für diesen Monat Vorrang vor der Schätzung aus der Quell-Entity. Beispiel: 2026-01 = 130.5, 2026-03 = 95"
         },
         "dry_run": {
           "name": "Testlauf",
