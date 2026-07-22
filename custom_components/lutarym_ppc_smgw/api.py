@@ -1,4 +1,4 @@
-# Integrationsversion: 1.15.0
+# Integrationsversion: 1.16.0
 """Client für die HAN-Schnittstelle eines PPC LTE Smart Meter Gateways (SMGW).
 
 Das Gateway bietet keine "echte" REST-API, sondern nur das interne

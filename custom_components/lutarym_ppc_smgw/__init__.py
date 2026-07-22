@@ -1,4 +1,4 @@
-# Integrationsversion: 1.15.0
+# Integrationsversion: 1.16.0
 """PPC Smart Meter Gateway (iMSys) Integration für Home Assistant.
 
 Einstiegspunkt der Integration (von Home Assistant automatisch anhand des
@@ -30,6 +30,8 @@ from .const import (
     ATTR_DRY_RUN,
     ATTR_HISTORY_IMPORT,
     ATTR_MONTHLY_KWH,
+    ATTR_RAMP_END,
+    ATTR_RAMP_START,
     ATTR_SINCE,
     ATTR_SOURCE_ENTITY,
     ATTR_START_DATE,
@@ -40,12 +42,13 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
     SERVICE_IMPORT_HISTORY,
+    SERVICE_REPAIR_ERRONEOUS_RAMP,
     SERVICE_REPAIR_STATISTICS_RESET,
     TARGET_OBIS,
 )
 from .coordinator import METER_OBIS_SEPARATOR, PPCSmgwCoordinator
 from .history_import import HistoryImportError, import_history
-from .repair_statistics import repair_statistics_reset
+from .repair_statistics import repair_erroneous_ramp, repair_statistics_reset
 from .travenetz_import import import_csv_history
 
 _LOGGER = logging.getLogger(__name__)
@@ -80,6 +83,15 @@ REPAIR_STATISTICS_SCHEMA = vol.Schema(
     }
 )
 
+REPAIR_RAMP_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_RAMP_START): cv.datetime,
+        vol.Required(ATTR_RAMP_END): cv.datetime,
+        vol.Optional(ATTR_TARGET_ENTITY): cv.entity_id,
+        vol.Optional(ATTR_DRY_RUN, default=False): cv.boolean,
+    }
+)
+
 
 async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     """Läuft genau EINMAL beim Start, unabhängig davon wie viele Gateways
@@ -103,6 +115,9 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     async def _handle_repair_statistics_reset(call: ServiceCall) -> ServiceResponse:
         return await _async_handle_repair_statistics_reset(hass, call)
 
+    async def _handle_repair_erroneous_ramp(call: ServiceCall) -> ServiceResponse:
+        return await _async_handle_repair_erroneous_ramp(hass, call)
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_IMPORT_HISTORY,
@@ -115,6 +130,13 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
         SERVICE_REPAIR_STATISTICS_RESET,
         _handle_repair_statistics_reset,
         schema=REPAIR_STATISTICS_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_REPAIR_ERRONEOUS_RAMP,
+        _handle_repair_erroneous_ramp,
+        schema=REPAIR_RAMP_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
     return True
@@ -553,6 +575,39 @@ async def _async_handle_repair_statistics_reset(
         target_statistic_id=target_entity,
         target_name=friendly_name,
         since=call.data[ATTR_SINCE],
+        dry_run=call.data[ATTR_DRY_RUN],
+    )
+    summary["target_entity"] = target_entity
+    return summary
+
+
+async def _async_handle_repair_erroneous_ramp(
+    hass: HomeAssistant, call: ServiceCall
+) -> ServiceResponse:
+    """Handler für den Service `lutarym_ppc_smgw.repair_erroneous_ramp`.
+
+    Entfernt einen fälschlich eingefügten linearen Anstieg (Gegenstück zu
+    repair_statistics_reset - siehe repair_statistics.py für Details).
+    """
+    registry = er.async_get(hass)
+    target_entity = call.data.get(ATTR_TARGET_ENTITY) or _find_target_1_8_0_entity(
+        hass, registry
+    )
+
+    entity_entry = registry.async_get(target_entity)
+    state = hass.states.get(target_entity)
+    friendly_name = (
+        (state.attributes.get("friendly_name") if state else None)
+        or (entity_entry.name or entity_entry.original_name if entity_entry else None)
+        or target_entity
+    )
+
+    summary = await repair_erroneous_ramp(
+        hass,
+        target_statistic_id=target_entity,
+        target_name=friendly_name,
+        ramp_start=call.data[ATTR_RAMP_START],
+        ramp_end=call.data[ATTR_RAMP_END],
         dry_run=call.data[ATTR_DRY_RUN],
     )
     summary["target_entity"] = target_entity

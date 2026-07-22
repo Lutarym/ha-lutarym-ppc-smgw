@@ -1,4 +1,4 @@
-# Integrationsversion: 1.15.0
+# Integrationsversion: 1.16.0
 """DataUpdateCoordinator für das PPC Smart Meter Gateway.
 
 Ein Update-Zyklus (_async_update_data) entspricht genau einem

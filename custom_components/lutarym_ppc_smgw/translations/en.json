@@ -115,7 +115,29 @@
           "description": "If enabled, only computes and returns a summary without writing anything to the statistics."
         }
       }
+    },
+    "repair_erroneous_ramp": {
+      "name": "Repair erroneous ramp",
+      "description": "Removes an erroneously inserted linear ramp (counterpart to 'Repair statistics reset' - here the excess is too HIGH instead of too LOW, typically from a bad bridge with a wrong target value). The ramp period is flattened, everything after it is corrected downward by the excess. Recommended: disable the recorder first, re-enable afterwards.",
+      "fields": {
+        "ramp_start": {
+          "name": "Ramp start",
+          "description": "The point in time the erroneous ramp begins (last good value is before this)."
+        },
+        "ramp_end": {
+          "name": "Ramp end",
+          "description": "The point in time values return to normal (small, plausible increments)."
+        },
+        "target_entity": {
+          "name": "Target entity (optional)",
+          "description": "The 1-0:1.8.0 sensor to repair. Auto-detected if left empty - only works automatically when exactly one gateway is configured."
+        },
+        "dry_run": {
+          "name": "Dry run",
+          "description": "If enabled, only computes and returns a summary without writing anything to the statistics."
+        }
+      }
     }
   },
-  "_integration_version": "1.15.0"
+  "_integration_version": "1.16.0"
 }

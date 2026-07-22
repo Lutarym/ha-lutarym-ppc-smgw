@@ -2,5 +2,5 @@
   "name": "PPC Smart Meter Gateway (iMSys) by Lutarym",
   "render_readme": true,
   "homeassistant": "2024.1.0",
-  "_integration_version": "1.15.0"
+  "_integration_version": "1.16.0"
 }
