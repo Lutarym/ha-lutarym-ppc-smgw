@@ -30,6 +30,15 @@
           "tariff_ids": "Evaluation profiles"
         }
       },
+      "reconfigure": {
+        "title": "Update gateway connection",
+        "description": "Update the host, username or password for this gateway. Your existing entities, history and imported statistics are kept - only the connection details change.\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "data": {
+          "host": "IP address / hostname",
+          "username": "Username",
+          "password": "Password"
+        }
+      },
       "history": {
         "title": "Optional: import historical data",
         "description": "Upload a TraveNetz export file for OBIS 1-0:1.8.0 (grid draw, hourly) to import it 1:1 - no scaling, no other entity. Leave both fields empty to skip this step entirely.\n\n\"Value at start\" is the meter reading at the very first row of the file (0 if it starts at meter installation).\n\nInstalled integration version: {version}",
@@ -46,7 +55,8 @@
       "no_meters_found": "No meters were found on the gateway. See details below."
     },
     "abort": {
-      "already_configured": "This gateway is already configured."
+      "already_configured": "This gateway is already configured.",
+      "reconfigure_successful": "Connection details updated successfully."
     }
   },
   "options": {

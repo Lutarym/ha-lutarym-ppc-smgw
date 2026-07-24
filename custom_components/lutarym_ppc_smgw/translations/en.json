@@ -16,6 +16,15 @@
           "password": "Password"
         }
       },
+      "reconfigure": {
+        "title": "Update gateway connection",
+        "description": "Update the host, username or password for this gateway. Your existing entities, history and imported statistics are kept - only the connection details change.\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "data": {
+          "host": "IP address / hostname",
+          "username": "Username",
+          "password": "Password"
+        }
+      },
       "meters": {
         "title": "Select meters",
         "description": "The following meters were found on the gateway. Choose which ones should be created as sensors.\n\nInstalled integration version: {version}\n\n{debug_info}",
@@ -46,7 +55,8 @@
       "no_meters_found": "No meters were found on the gateway. See details below."
     },
     "abort": {
-      "already_configured": "This gateway is already configured."
+      "already_configured": "This gateway is already configured.",
+      "reconfigure_successful": "Connection details updated successfully."
     }
   },
   "options": {

@@ -391,6 +391,85 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={"version": VERSION},
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "ConfigFlowResult":
+        """Erlaubt das nachträgliche Ändern von Host/Benutzername/Passwort
+
+        über "Neu konfigurieren" (⋮-Menü der Integration), OHNE den
+        bestehenden Config Entry zu löschen. Dadurch bleiben die
+        unique_id (Host-IP), alle Entity-IDs, der Verlauf und die
+        importierten Langzeit-Statistiken erhalten - anders als bei
+        "löschen + neu einrichten".
+
+        Testet die neuen Zugangsdaten genau wie async_step_credentials
+        (ein Login-Versuch), bevor sie tatsächlich übernommen werden.
+        """
+        errors: dict[str, str] = {}
+        debug_info = ""
+        reconfigure_entry = self._get_reconfigure_entry()
+
+        if self._host is None:
+            # Beim ersten Anzeigen des Formulars mit den bisherigen Werten
+            # vorbefüllen, damit man nicht alles neu eintippen muss.
+            self._host = reconfigure_entry.data[CONF_HOST]
+            self._username = reconfigure_entry.data[CONF_USERNAME]
+            self._password = reconfigure_entry.data[CONF_PASSWORD]
+
+        if user_input is not None:
+            self._host = user_input[CONF_HOST]
+            self._username = user_input[CONF_USERNAME]
+            self._password = user_input[CONF_PASSWORD]
+
+            await self._async_close_client()
+            self._httpx_client = httpx.AsyncClient(verify=False)
+            self._client = PPCSmgwClient(
+                self._httpx_client, self._host, self._username, self._password
+            )
+
+            try:
+                await self._client.login()
+            except PPCSmgwAuthError as err:
+                errors["base"] = "invalid_auth"
+                debug_info = html.escape(err.details)
+            except PPCSmgwParsingError as err:
+                # Login war erfolgreich (Zugangsdaten korrekt), aber die
+                # Antwortseite konnte nicht gelesen werden - wie bei
+                # async_step_credentials trotzdem als Fehler anzeigen,
+                # damit der Nutzer die Details sieht, statt es stillschweigend
+                # zu übernehmen.
+                errors["base"] = "parsing_error"
+                debug_info = html.escape(err.details)
+            except PPCSmgwConnectionError as err:
+                errors["base"] = "cannot_connect"
+                debug_info = html.escape(err.details)
+            finally:
+                await self._async_close_client()
+
+            if not errors:
+                return self.async_update_reload_and_abort(
+                    reconfigure_entry,
+                    data={
+                        CONF_HOST: self._host,
+                        CONF_USERNAME: self._username,
+                        CONF_PASSWORD: self._password,
+                    },
+                )
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_HOST, default=self._host): str,
+                vol.Required(CONF_USERNAME, default=self._username): str,
+                vol.Required(CONF_PASSWORD, default=self._password or ""): str,
+            }
+        )
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"debug_info": debug_info, "version": VERSION},
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> "PPCSmgwOptionsFlow":

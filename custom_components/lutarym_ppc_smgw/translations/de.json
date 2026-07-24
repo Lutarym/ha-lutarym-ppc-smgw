@@ -16,6 +16,15 @@
           "password": "Passwort"
         }
       },
+      "reconfigure": {
+        "title": "Gateway-Verbindung aktualisieren",
+        "description": "Aktualisiere Host, Benutzername oder Passwort für dieses Gateway. Deine bestehenden Entitäten, der Verlauf und importierte Statistiken bleiben erhalten - nur die Verbindungsdaten ändern sich.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
+        "data": {
+          "host": "IP-Adresse / Hostname",
+          "username": "Benutzername",
+          "password": "Passwort"
+        }
+      },
       "meters": {
         "title": "Zähler auswählen",
         "description": "Es wurden folgende Zähler am Gateway gefunden. Wähle aus, welche als Sensoren angelegt werden sollen.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
@@ -46,7 +55,8 @@
       "no_meters_found": "Es wurden keine Zähler am Gateway gefunden. Details siehe unten."
     },
     "abort": {
-      "already_configured": "Dieses Gateway ist bereits eingerichtet."
+      "already_configured": "Dieses Gateway ist bereits eingerichtet.",
+      "reconfigure_successful": "Verbindungsdaten erfolgreich aktualisiert."
     }
   },
   "options": {
