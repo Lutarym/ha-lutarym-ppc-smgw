@@ -5,6 +5,31 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.1.0
+
+**Neu: "Neu konfigurieren" - Host/Benutzername/Passwort ändern ohne die
+Integration zu löschen**
+
+- Bisher gab es keinen Weg, geänderte HAN-Zugangsdaten (z. B. nach einem
+  vom Messstellenbetreiber ausgelösten Passwort-Reset) einzutragen, ohne
+  die komplette Integration zu entfernen und neu einzurichten - was die
+  `unique_id`, alle Entity-IDs, den Verlauf und importierte
+  Langzeit-Statistiken (siehe `travenetz_import.py`/`history_import.py`)
+  gefährdet hätte.
+- Neuer `async_step_reconfigure` im Config Flow: Über das ⋮-Menü der
+  Integration → **"Neu konfigurieren"** lassen sich Host, Benutzername
+  und Passwort ändern. Die neuen Zugangsdaten werden mit einem
+  Live-Login-Versuch getestet (dieselbe Fehlerbehandlung wie beim
+  Ersteinrichten: `invalid_auth`, `parsing_error`, `cannot_connect`) und
+  erst bei Erfolg über `async_update_reload_and_abort` übernommen -
+  Entities, Verlauf und Statistiken bleiben dabei vollständig erhalten,
+  da die `unique_id` (Host-IP) unverändert bleibt.
+- Formular ist mit den bisherigen Werten vorausgefüllt, damit nicht alles
+  neu eingetippt werden muss.
+- `strings.json`/`translations/en.json`/`translations/de.json` um den
+  neuen `reconfigure`-Schritt sowie die Abort-Meldung
+  `reconfigure_successful` ergänzt.
+
 ## 1.10.0
 
 Reiner Versionssprung auf 1.10.0 (von 1.0.7), keine Codeänderung.
